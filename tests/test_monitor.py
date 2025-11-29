@@ -11,6 +11,15 @@ class DummyDoc:
         self.metadata = metadata
 
 
+class RecordingStepLogger:
+    def __init__(self):
+        self.entries = []
+
+    def log(self, stage: str, message: str, *args, **kwargs):
+        rendered = message % args if args else message
+        self.entries.append((stage, rendered))
+
+
 class RAGMonitorTest(unittest.TestCase):
     def test_session_logs_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -60,6 +69,30 @@ class RAGMonitorTest(unittest.TestCase):
             self.assertEqual(len(retrieved), 1)
             self.assertEqual(retrieved[0]["doc_id"], "doc-2")
             self.assertAlmostEqual(retrieved[0]["score"], 0.99)
+
+    def test_session_emits_step_logs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = RecordingStepLogger()
+            monitor = RAGMonitor(
+                dataset_name="demo",
+                pipeline_name="p3",
+                log_dir=tmpdir,
+                step_logger=recorder,
+            )
+            with monitor.session(question="Why?", session_id="sess-3", log_steps=True) as session:
+                session.record_retrieval(
+                    [
+                        {"doc_id": "doc-1", "score": 0.9, "source": "stub", "metadata": {}},
+                        {"doc_id": "doc-2", "score": 0.4, "source": "stub2", "metadata": {}},
+                    ],
+                    top_k=5,
+                )
+                session.record_answer("Because", latency_ms={"total": 42.0})
+
+        stages = [stage for stage, _ in recorder.entries]
+        self.assertIn("session", stages)
+        self.assertIn("retrieval", stages)
+        self.assertIn("write", stages)
 
 
 if __name__ == "__main__":

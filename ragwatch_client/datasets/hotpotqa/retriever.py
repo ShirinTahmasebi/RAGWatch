@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
 from .data import build_document_corpus
-from ragwatch.settings import env_path
+from ragwatch.utils import env_path
 
 DEFAULT_TOP_K = 5
 

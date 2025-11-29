@@ -25,11 +25,16 @@ Core logging utilities plus a HotpotQA-focused RAG prototype.
 ```
 RAGWatch/
 ├── ragwatch/                 # core logging & monitoring package
-│   ├── schema.py             # Pydantic models: RetrievedDoc, RunRecord
-│   ├── writers.py            # JSONLWriter appends runs to disk
-│   ├── logger.py             # Low-level logger used by monitors
-│   ├── monitor.py            # Session-based RAGMonitor helpers
-│   └── settings.py           # Shared environment helpers (paths, secrets)
+│   ├── utils/                # env helpers, writers, shared helpers
+│   │   ├── env_manager.py
+│   │   └── writers.py
+│   ├── logging/              # JSONL-backed logger
+│   │   └── logger.py
+│   ├── models/               # Pydantic models for logged artifacts
+│   │   ├── retrieved_doc.py
+│   │   └── run_record.py
+│   └── monitor/              # Session-based monitor context
+│       └── monitor.py
 ├── ragwatch_client/          # dataset-agnostic runner + CLI
 │   ├── __main__.py           # Typer CLI (python -m ragwatch_client <dataset> ...)
 │   ├── runner.py             # shared evaluation/stream harness
@@ -59,17 +64,17 @@ Copy `.env.template` to `.env` and fill in the required values:
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
 - `RAGWATCH_HOTPOTQA_USE_STUBS`: Set to `true` to skip downloading HotpotQA and fall back to the tiny built-in stubs (useful for tests/offline).
 
-All modules resolve paths via `ragwatch.settings`, so nothing in the codebase hardcodes directories anymore.
+All modules resolve paths via `ragwatch.utils.env_manager`, so nothing in the codebase hardcodes directories anymore.
 
 ## Core modules
 
 ### Logging & monitoring (`ragwatch`)
 
-Core components:
-- `schema.py`: defines `RetrievedDoc` and `RunRecord` Pydantic models for every RAG execution (dataset/pipeline names, QA pairs, retrieved docs, latency metrics, token usage, and arbitrary `extra` flags).
-- `writers.py`: provides `JSONLWriter`, which ensures the log directory exists and appends serialized `RunRecord` entries as newline-delimited JSON.
-- `logger.py`: exposes the low-level `RAGWatchLogger`, wiring schema + writer, stamping UUIDs/timestamps, and streaming runs into dataset-specific JSONL files (e.g., `logs/hotpotqa_v1.jsonl`).
-- `monitor.py`: introduces `RAGMonitor` / `SessionContext`, a thin wrapper that lets you instrument existing RAG pipelines with a `with monitor.session(...)` block instead of touching logging internals.
+Core components now live in focused subpackages:
+- `ragwatch.models`: houses `RetrievedDoc` and `RAGRunRecord`—Pydantic models that capture every aspect of a RAG execution (dataset/pipeline metadata, QA pairs, retrieved docs, latency metrics, token usage, and arbitrary extras).
+- `ragwatch.utils`: contains `env_manager` (centralized `.env` loader + helpers) and `writers` (the `JSONLWriter` that appends serialized `RAGRunRecord` entries to disk, creating directories as needed).
+- `ragwatch.logging`: exposes the low-level `RAGWatchLogger` plus `ConsoleStepLogger`, wiring the models + writer for JSONL telemetry and optionally printing colorized console updates.
+- `ragwatch.monitor`: implements `RAGMonitor` / `SessionContext`, a thin wrapper that lets you instrument existing RAG pipelines with a `with monitor.session(...)` block, optionally enabling `log_steps` for automatic console narration of each run.
 
 #### Example usage
 
@@ -82,7 +87,7 @@ monitor = RAGMonitor(
    pipeline_name="demo",
 )
 
-with monitor.session(question=qa["question"], session_id=qa["id"]) as session:
+with monitor.session(question=qa["question"], session_id=qa["id"], log_steps=True) as session:
    docs_with_scores = retriever.similarity_search_with_score(qa["question"], k=5)
    session.record_retrieval(docs_with_scores)
 
@@ -95,6 +100,12 @@ with monitor.session(question=qa["question"], session_id=qa["id"]) as session:
    session.set_gold_answer(qa.get("answer", ""))
 
 print("Runs recorded in logs/hotpotqa_demo.jsonl")
+
+# Share the same ConsoleStepLogger instance across monitors if you
+# want consistent CLI output:
+# from ragwatch.logging import ConsoleStepLogger
+# step_logger = ConsoleStepLogger()
+# monitor = RAGMonitor(..., step_logger=step_logger, default_log_steps=True)
 ```
 
 If you need full control, you can still instantiate `RAGWatchLogger` directly; the monitor simply wraps it with a friendlier API.
@@ -108,7 +119,7 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 ### HotpotQA dataset (`ragwatch_client.datasets.hotpotqa`)
 
 - **Data prep**: `load_questions()` / `build_document_corpus()` live in `ragwatch_client.datasets.hotpotqa.data` and still pull from the Hugging Face `hotpot_qa` dataset (with stub fallbacks for offline/test scenarios). They respect the env-configured split/sample sizes.
-- **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` live in `...hotpotqa.retriever` and manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.settings` handles `.env` loading.
+- **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` live in `...hotpotqa.retriever` and manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.utils.env_manager` handles `.env` loading.
 - **RAG chain**: `ragwatch_client.datasets.hotpotqa.pipeline.build_rag_chain()` wires the retriever output through a simple LangChain prompt and `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)`, formatting retrieved docs into a context block before querying the LLM.
 - **Generic runner**: `ragwatch_client.runner` is dataset-agnostic; it asks each dataset implementation for questions/resources, drives `RAGMonitor`, and powers both `eval` and `stream` flows.
 - **CLI**: `python -m ragwatch_client hotpotqa eval` executes a single pass, while `python -m ragwatch_client hotpotqa stream --interval 1.0` keeps answering questions in a loop (use `--max-iterations` to stop automatically).

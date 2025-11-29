@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from ragwatch.schema import RetrievedDoc, RunRecord
-from ragwatch.writers import JSONLWriter
+from ragwatch.models import RAGRunRecord, RetrievedDoc
+from ragwatch.utils import JSONLWriter
 
 
-def _sample_run_record() -> RunRecord:
-    return RunRecord(
+def _sample_run_record() -> RAGRunRecord:
+    return RAGRunRecord(
         run_id="run-456",
         session_id="session-xyz",
         timestamp=dt.datetime.utcnow(),

@@ -7,15 +7,11 @@ from dataclasses import dataclass
 from itertools import cycle
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from colorama import Fore, Style, init as colorama_init
-
 from ragwatch import RAGMonitor
-from ragwatch.settings import env_str
+from ragwatch.logging import ConsoleStepLogger
+from ragwatch.utils import env_str
 
 from .datasets.base import DatasetClient, DatasetResources
-
-colorama_init(autoreset=False)
-
 
 @dataclass(slots=True)
 class DatasetRunConfig:
@@ -24,6 +20,7 @@ class DatasetRunConfig:
     log_dir: Optional[str] = None
     interval_seconds: float = 1.0
     max_iterations: Optional[int] = None
+    log_steps: bool = True
 
 
 @dataclass(slots=True)
@@ -32,12 +29,13 @@ class PreparedContext:
     vectorstore: Any
     rag_chain: Any
     top_k: int
+    log_steps: bool
 
 
 def run_eval(dataset: DatasetClient, config: Optional[DatasetRunConfig] = None) -> List[Dict[str, Any]]:
     config = config or DatasetRunConfig()
     dataset_name, pipeline_name = _resolve_names(dataset, config)
-    prepared = _prepare_context(dataset, dataset_name, pipeline_name, config.log_dir)
+    prepared = _prepare_context(dataset, dataset_name, pipeline_name, config.log_dir, config.log_steps)
 
     qa_pairs = dataset.load_questions()
     summaries: List[Dict[str, Any]] = []
@@ -57,6 +55,7 @@ def run_eval(dataset: DatasetClient, config: Optional[DatasetRunConfig] = None) 
             vectorstore=prepared.vectorstore,
             rag=prepared.rag_chain,
             top_k=prepared.top_k,
+            log_steps=prepared.log_steps,
         )
         summaries.append(summary)
 
@@ -71,7 +70,13 @@ def run_stream(
 ):
     config = config or DatasetRunConfig()
     dataset_name, pipeline_name = _resolve_names(dataset, config)
-    prepared = _prepare_context(dataset, dataset_name, pipeline_name, config.log_dir)
+    prepared = _prepare_context(
+        dataset,
+        dataset_name,
+        pipeline_name,
+        config.log_dir,
+        config.log_steps,
+    )
 
     source = questions or dataset.load_questions()
     materialized = list(source)
@@ -87,10 +92,9 @@ def run_stream(
         config.max_iterations if config.max_iterations is not None else "∞",
     )
 
-    iterable: Iterable[Dict[str, Any]] = cycle(materialized)
     iterations = 0
 
-    for idx, qa in enumerate(iterable, start=1):
+    for idx, qa in enumerate(materialized, start=1):
         _execute_single_question(
             qa=qa,
             default_session=f"{dataset.slug}-{idx}",
@@ -98,6 +102,7 @@ def run_stream(
             vectorstore=prepared.vectorstore,
             rag=prepared.rag_chain,
             top_k=prepared.top_k,
+            log_steps=prepared.log_steps,
         )
         iterations += 1
         if config.max_iterations is not None and iterations >= config.max_iterations:
@@ -108,45 +113,11 @@ def run_stream(
 # ----- Internal helpers ------------------------------------------------------------
 
 
-def _init_console_logger() -> logging.Logger:
-    logger = logging.getLogger("ragwatch.client")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("[RAGWatch] %(message)s"))
-        logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    return logger
-
-
-_CONSOLE = _init_console_logger()
-
-_STAGE_COLORS = {
-    "prep": Fore.CYAN,
-    "vector": Fore.MAGENTA,
-    "retriever": Fore.BLUE,
-    "rag": Fore.CYAN,
-    "stream": Fore.YELLOW,
-    "session": Fore.GREEN,
-    "retrieval": Fore.LIGHTBLUE_EX,
-    "write": Fore.WHITE,
-    "error": Fore.RED,
-}
+_STEP_LOGGER = ConsoleStepLogger()
 
 
 def _log(stage: str, message: str, *args, level: int = logging.INFO, exc_info=False) -> None:
-    color = _STAGE_COLORS.get(stage, "")
-    reset = Style.RESET_ALL if color else ""
-    prefix = f"[{stage.upper()}] "
-    fmt = f"{color}{prefix}{message}{reset}"
-    _CONSOLE.log(level, fmt, *args, exc_info=exc_info)
-
-
-@dataclass(slots=True)
-class _RuntimeArtifacts:
-    dataset_name: str
-    pipeline_name: str
-    context: PreparedContext
+    _STEP_LOGGER.log(stage, message, *args, level=level, exc_info=exc_info)
 
 
 def _prepare_context(
@@ -154,6 +125,7 @@ def _prepare_context(
     dataset_name: str,
     pipeline_name: str,
     log_dir_override: Optional[str],
+ 	log_steps: bool,
 ) -> PreparedContext:
     _log(
         "prep",
@@ -184,6 +156,8 @@ def _prepare_context(
         dataset_name=dataset_name,
         pipeline_name=pipeline_name,
         log_dir=resolved_log_dir,
+        step_logger=_STEP_LOGGER,
+        default_log_steps=log_steps,
     )
 
     return PreparedContext(
@@ -191,6 +165,7 @@ def _prepare_context(
         vectorstore=resources.vectorstore,
         rag_chain=resources.rag_chain,
         top_k=retriever_top_k,
+        log_steps=log_steps,
     )
 
 
@@ -227,67 +202,28 @@ def _execute_single_question(
     vectorstore: Any,
     rag: Any,
     top_k: int,
+    log_steps: bool,
 ) -> Dict[str, Any]:
     question = qa["question"]
     session_id = qa.get("id", default_session)
 
-    _log(
-        "session",
-        "Session %s: answering question '%s'",
-        session_id,
-        _preview(question),
-    )
-
-    with monitor.session(question=question, session_id=session_id) as session:
+    with monitor.session(question=question, session_id=session_id, log_steps=log_steps) as session:
         t0 = time.time()
         try:
-            _log("session", "Session %s: invoking RAG chain.", session_id)
             result = rag.invoke(question)
         except Exception:
-            elapsed = (time.time() - t0) * 1000
-            _log(
-                "error",
-                "Session %s: RAG invocation failed after %.0f ms.",
-                session_id,
-                elapsed,
-                level=logging.ERROR,
-                exc_info=True,
-            )
             raise
 
         latency_ms = {"total": (time.time() - t0) * 1000}
-        _log("session", "Session %s: model answered in %.0f ms.", session_id, latency_ms["total"])
 
         answer = getattr(result, "content", None) or str(result)
         token_usage: Dict[str, int] = {}
-        _log(
-            "retrieval",
-            "Session %s: retrieving top %d supporting documents.",
-            session_id,
-            top_k,
-        )
         retrieved = vectorstore.similarity_search_with_score(question, k=top_k)
-        session.record_retrieval(retrieved)
-        if retrieved:
-            doc_list = ", ".join(
-                _doc_id_from_result(pair, idx)
-                for idx, pair in enumerate(retrieved[:3], start=1)
-            )
-            if len(retrieved) > 3:
-                doc_list += ", …"
-            _log("retrieval", "Session %s: retrieved %s", session_id, doc_list)
-        else:
-            _log("retrieval", "Session %s: no supporting documents retrieved.", session_id)
+        session.record_retrieval(retrieved, top_k=top_k)
 
         if qa.get("answer"):
             session.set_gold_answer(qa["answer"])
         session.record_answer(answer, latency_ms=latency_ms, token_usage=token_usage)
-        _log(
-            "write",
-            "Session %s: run logged to %s",
-            session_id,
-            monitor.logger.writer.path,
-        )
 
     return {
         "question": question,
@@ -297,21 +233,3 @@ def _execute_single_question(
     }
 
 
-def _doc_id_from_result(result_pair, fallback_idx: int) -> str:
-    doc, _score = _split_result(result_pair)
-    metadata = getattr(doc, "metadata", None) or {}
-    for key in ("doc_id", "id", "source", "title"):
-        value = metadata.get(key)
-        if value:
-            return str(value)
-    return f"doc-{fallback_idx}"
-
-
-def _split_result(result_pair) -> Tuple[Any, Any]:
-    if isinstance(result_pair, (list, tuple)) and len(result_pair) == 2:
-        return result_pair
-    return result_pair, None
-
-
-def _preview(question: str, limit: int = 80) -> str:
-    return question if len(question) <= limit else f"{question[:limit]}…"

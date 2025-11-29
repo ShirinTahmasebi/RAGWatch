@@ -1,13 +1,18 @@
-"""Public API for the RAGWatch package."""
+"""Public API surface for the RAGWatch package."""
 
-from .logger import RAGWatchLogger
+from .logging import ConsoleStepLogger, RAGWatchLogger
+from .models import RAGRunRecord, RetrievedDoc
 from .monitor import RAGMonitor, SessionContext
-from .schema import RetrievedDoc, RunRecord
+from .utils import JSONLWriter, env_path, env_str
 
 __all__ = [
 	"RAGMonitor",
 	"SessionContext",
 	"RAGWatchLogger",
-	"RunRecord",
+	"ConsoleStepLogger",
+	"RAGRunRecord",
 	"RetrievedDoc",
+	"JSONLWriter",
+	"env_str",
+	"env_path",
 ]

@@ -1,10 +1,10 @@
 import datetime as dt
 import unittest
 
-from ragwatch.schema import RetrievedDoc, RunRecord
+from ragwatch.models import RAGRunRecord, RetrievedDoc
 
 
-class RunRecordSchemaTest(unittest.TestCase):
+class RAGRunRecordSchemaTest(unittest.TestCase):
     def test_run_record_instantiation(self) -> None:
         retrieved = [
             RetrievedDoc(
@@ -15,7 +15,7 @@ class RunRecordSchemaTest(unittest.TestCase):
             )
         ]
 
-        record = RunRecord(
+        record = RAGRunRecord(
             run_id="run-123",
             session_id="session-abc",
             timestamp=dt.datetime.utcnow(),

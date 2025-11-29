@@ -5,8 +5,8 @@ import datetime as dt
 import uuid
 from typing import Any, Dict, List, Optional
 
-from .schema import RetrievedDoc, RunRecord
-from .writers import JSONLWriter
+from ..models import RAGRunRecord, RetrievedDoc
+from ..utils import JSONLWriter
 
 
 class RAGWatchLogger:
@@ -30,8 +30,8 @@ class RAGWatchLogger:
         token_usage: Dict[str, int],
         session_id: str,
         extra: Optional[Dict[str, Any]] = None,
-    ) -> RunRecord:
-        record = RunRecord(
+    ) -> RAGRunRecord:
+        record = RAGRunRecord(
             run_id=self.new_run_id(),
             session_id=session_id,
             timestamp=dt.datetime.utcnow(),
