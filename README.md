@@ -24,17 +24,20 @@ Core logging utilities plus a HotpotQA-focused RAG prototype.
 
 ```
 RAGWatch/
-├── ragwatch/                 # core logging package
+├── ragwatch/                 # core logging & monitoring package
 │   ├── schema.py             # Pydantic models: RetrievedDoc, RunRecord
 │   ├── writers.py            # JSONLWriter appends runs to disk
-│   ├── logger.py             # RAGWatchLogger high-level API
+│   ├── logger.py             # Low-level logger used by monitors
+│   ├── monitor.py            # Session-based RAGMonitor helpers
 │   └── settings.py           # Shared environment helpers (paths, secrets)
-├── ragwatch_hotpotqa/
-│   ├── data_prep.py          # placeholder loaders for questions/docs
-│   ├── retriever.py          # FAISS build/load/ensure helpers
-│   ├── build_rag.py          # LangChain-based RAG chain (ChatOpenAI + retriever)
-│   ├── run_eval.py           # Evaluation harness that logs via RAGWatch
-│   └── __main__.py           # Typer CLI entry point (python -m ragwatch_hotpotqa)
+├── ragwatch_client/          # dataset-agnostic runner + CLI
+│   ├── __main__.py           # Typer CLI (python -m ragwatch_client <dataset> ...)
+│   ├── runner.py             # shared evaluation/stream harness
+│   └── datasets/
+│       └── hotpotqa/
+│           ├── data.py       # dataset loaders/stubs
+│           ├── pipeline.py   # LangChain-based RAG chain
+│           └── retriever.py  # FAISS build/load helpers
 ├── tests/
 │   ├── test_schema.py
 │   ├── test_writers.py
@@ -51,7 +54,7 @@ Copy `.env.template` to `.env` and fill in the required values:
 - `OPENAI_API_KEY`: passed to LangChain’s OpenAI clients.
 - `RAGWATCH_LOG_DIR`: base directory for JSONL logs (e.g., `logs`).
 - `RAGWATCH_HOTPOTQA_LOG_DIR`: HotpotQA-specific log directory (e.g., `logs/hotpotqa`).
-- `RAGWATCH_HOTPOTQA_INDEX_DIR`: location on disk for the FAISS index (e.g., `ragwatch_hotpotqa/index`).
+- `RAGWATCH_HOTPOTQA_INDEX_DIR`: location on disk for the FAISS index (e.g., `data/indexes/hotpotqa`).
 - `RAGWATCH_HOTPOTQA_SPLIT`: HotpotQA split to load via Hugging Face (default `validation`).
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
 - `RAGWATCH_HOTPOTQA_USE_STUBS`: Set to `true` to skip downloading HotpotQA and fall back to the tiny built-in stubs (useful for tests/offline).
@@ -60,58 +63,61 @@ All modules resolve paths via `ragwatch.settings`, so nothing in the codebase ha
 
 ## Core modules
 
-### Logging (`ragwatch`)
+### Logging & monitoring (`ragwatch`)
 
 Core components:
 - `schema.py`: defines `RetrievedDoc` and `RunRecord` Pydantic models for every RAG execution (dataset/pipeline names, QA pairs, retrieved docs, latency metrics, token usage, and arbitrary `extra` flags).
 - `writers.py`: provides `JSONLWriter`, which ensures the log directory exists and appends serialized `RunRecord` entries as newline-delimited JSON.
-- `logger.py`: exposes `RAGWatchLogger`, wiring schema + writer, stamping UUIDs/timestamps, and streaming runs into dataset-specific JSONL files (e.g., `logs/hotpotqa_v1.jsonl`).
+- `logger.py`: exposes the low-level `RAGWatchLogger`, wiring schema + writer, stamping UUIDs/timestamps, and streaming runs into dataset-specific JSONL files (e.g., `logs/hotpotqa_v1.jsonl`).
+- `monitor.py`: introduces `RAGMonitor` / `SessionContext`, a thin wrapper that lets you instrument existing RAG pipelines with a `with monitor.session(...)` block instead of touching logging internals.
 
 #### Example usage
 
 ```python
-from ragwatch import RAGWatchLogger
+from ragwatch import RAGMonitor
 
-logger = RAGWatchLogger(
-   log_dir="logs",
+monitor = RAGMonitor(
+   log_dir="logs/hotpotqa",
    dataset_name="hotpotqa",
    pipeline_name="demo",
 )
 
-logger.log_run(
-   question="What is retrieval-augmented generation?",
-   answer="It combines search over a corpus with LLM completion.",
-   retrieved_docs=[
-      {"doc_id": "doc-1", "score": 0.88, "source": "stub", "metadata": {}},
-   ],
-   latency_ms={"retrieval": 42.1, "generation": 210.5},
-   token_usage={"prompt": 250, "completion": 120},
-   session_id="notebook-001",
-   extra={"escalated": False},
-)
+with monitor.session(question=qa["question"], session_id=qa["id"]) as session:
+   docs_with_scores = retriever.similarity_search_with_score(qa["question"], k=5)
+   session.record_retrieval(docs_with_scores)
 
-print("Run recorded in logs/hotpotqa_demo.jsonl")
+   answer = rag_chain.invoke(qa["question"])
+   session.record_answer(
+      getattr(answer, "content", None) or str(answer),
+      latency_ms={"total": 850.0},
+      token_usage={"prompt": 210, "completion": 96},
+   )
+   session.set_gold_answer(qa.get("answer", ""))
+
+print("Runs recorded in logs/hotpotqa_demo.jsonl")
 ```
+
+If you need full control, you can still instantiate `RAGWatchLogger` directly; the monitor simply wraps it with a friendlier API.
 
 #### Module tests
 
 ```bash
-python -m unittest tests.test_schema tests.test_writers tests.test_logger
+python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.test_monitor
 ```
 
-### HotpotQA pipeline (`ragwatch_hotpotqa`)
+### HotpotQA dataset (`ragwatch_client.datasets.hotpotqa`)
 
-- **Data prep**: `load_questions()` / `build_document_corpus()` pull from the Hugging Face `hotpot_qa` dataset (with stub fallback for offline/test scenarios) and respect the env-configured split/sample sizes.
-- **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.settings` handles `.env` loading.
-- **RAG chain**: `build_rag_chain()` wires the retriever output through a simple LangChain prompt and `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)`. It formats retrieved docs into a context block before sending the request to the LLM.
-- **Evaluation harness**: `run_eval.py` loops through QA pairs, invokes the chain, and logs outcomes via `RAGWatchLogger`, including the retrieved documents + similarity scores for each question. It also exposes `run_hotpotqa_stream` for continuous monitoring.
-- **CLI**: `python -m ragwatch_hotpotqa eval` executes a single pass over the dataset, while `python -m ragwatch_hotpotqa stream --interval 1.0` keeps answering questions in a loop (use `--max-iterations` to stop automatically).
+- **Data prep**: `load_questions()` / `build_document_corpus()` live in `ragwatch_client.datasets.hotpotqa.data` and still pull from the Hugging Face `hotpot_qa` dataset (with stub fallbacks for offline/test scenarios). They respect the env-configured split/sample sizes.
+- **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` live in `...hotpotqa.retriever` and manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.settings` handles `.env` loading.
+- **RAG chain**: `ragwatch_client.datasets.hotpotqa.pipeline.build_rag_chain()` wires the retriever output through a simple LangChain prompt and `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)`, formatting retrieved docs into a context block before querying the LLM.
+- **Generic runner**: `ragwatch_client.runner` is dataset-agnostic; it asks each dataset implementation for questions/resources, drives `RAGMonitor`, and powers both `eval` and `stream` flows.
+- **CLI**: `python -m ragwatch_client hotpotqa eval` executes a single pass, while `python -m ragwatch_client hotpotqa stream --interval 1.0` keeps answering questions in a loop (use `--max-iterations` to stop automatically).
 
 ## Usage snippet (HotpotQA prototype)
 
 ```python
-from ragwatch_hotpotqa.retriever import ensure_retriever
-from ragwatch_hotpotqa.build_rag import build_rag_chain
+from ragwatch_client.datasets.hotpotqa.retriever import ensure_retriever
+from ragwatch_client.datasets.hotpotqa.pipeline import build_rag_chain
 
 # Ensure FAISS index exists (builds from stub docs for now)
 ensure_retriever()
@@ -125,7 +131,7 @@ print(answer)
 To instrument the above chain with rich telemetry, run the evaluation harness:
 
 ```bash
-python -m ragwatch_hotpotqa eval
+python -m ragwatch_client hotpotqa eval
 ```
 
 It ensures the FAISS index exists, invokes the RAG chain over the stub dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`, `--dataset-name`, or `--pipeline-name` flags.
@@ -133,7 +139,7 @@ It ensures the FAISS index exists, invokes the RAG chain over the stub dataset, 
 For continuous monitoring, run:
 
 ```bash
-python -m ragwatch_hotpotqa stream --interval 1.0 --max-iterations 10
+python -m ragwatch_client hotpotqa stream --interval 1.0 --max-iterations 10
 ```
 
 This repeatedly samples questions (cycling through the stub set for now), waits the requested interval between calls, and logs each result so you can watch performance trends over time.

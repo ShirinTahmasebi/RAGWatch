@@ -4,7 +4,11 @@ import unittest
 
 from langchain_core.embeddings import Embeddings
 
-from ragwatch_hotpotqa.retriever import build_retriever, ensure_retriever, load_retriever
+from ragwatch_client.datasets.hotpotqa.retriever import (
+    build_retriever,
+    ensure_retriever,
+    load_retriever,
+)
 
 
 class DummyEmbeddings(Embeddings):

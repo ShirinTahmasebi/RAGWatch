@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from ragwatch_hotpotqa import data_prep
+from ragwatch_client.datasets.hotpotqa import data as data_prep
 
 
 class HotpotQADataPrepTest(unittest.TestCase):

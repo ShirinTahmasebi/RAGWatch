@@ -5,9 +5,10 @@
             "name": "HotpotQA Stream (debug)",
             "type": "debugpy",
             "request": "launch",
-            "module": "ragwatch_hotpotqa",
+            "module": "ragwatch_client",
             "justMyCode": true,
             "args": [
+                "hotpotqa",
                 "stream",
                 "--interval",
                 "1.0",

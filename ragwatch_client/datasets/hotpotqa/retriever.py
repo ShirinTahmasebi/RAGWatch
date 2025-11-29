@@ -8,7 +8,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
-from .data_prep import build_document_corpus
+from .data import build_document_corpus
 from ragwatch.settings import env_path
 
 DEFAULT_TOP_K = 5

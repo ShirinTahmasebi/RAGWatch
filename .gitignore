@@ -1,5 +1,5 @@
 logs/
-ragwatch_hotpotqa/index/
+data/indexes/*
 
 
 # Byte-compiled / optimized / DLL files
