@@ -1,34 +1,23 @@
-"""Common interfaces for dataset-specific client modules."""
+"""Dataset-only contracts without any vectorstore or pipeline wiring."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, runtime_checkable
 
 
-@dataclass(slots=True)
-class DatasetResources:
-    """Artifacts returned by dataset modules when preparing a run."""
-
-    vectorstore: Any
-    rag_chain: Any
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
 @runtime_checkable
-class DatasetClient(Protocol):
-    """Minimal interface dataset implementations must provide."""
+class CorpusDataset(Protocol):
+    """Dataset implementations responsible for questions + corpus preparation."""
 
-    @property
-    def description(self) -> str:
-        """Human-readable summary surfaced in CLI listings."""
-
-    @property
-    def dataset_name(self) -> str:
-        """Unique dataset name used for CLI selection and log defaults."""
+    dataset_name: str
+    description: str
+    log_env_var: str | None
 
     def load_questions(self) -> List[Dict[str, Any]]:
-        """Return a list of QA dicts consumed by the generic runner."""
+        """Return the ordered list of QA dicts for this dataset."""
 
-    def prepare_resources(self) -> DatasetResources:
-        """Eagerly build or load the vector store and downstream RAG chain."""
+    def build_document_corpus(self) -> List[Dict[str, Any]]:
+        """Return the raw documents that should be embedded/indexed."""
+
+
+__all__ = ["CorpusDataset"]
 

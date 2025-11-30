@@ -1,15 +1,14 @@
-"""Dataset catalog for ragwatch_client."""
+"""Corpus-only dataset catalog for ragwatch_client."""
 from __future__ import annotations
 
-from typing import Dict, Type
+from typing import Callable, Dict
 
-from .base import DatasetClient
-from .hotpotqa import HotpotQADataset
+from .base import CorpusDataset
+from .hotpotqa import DATASET_NAME as HOTPOTQA_NAME, build_data_source as build_hotpotqa_data_source
 
-# Map dataset names to their implementing classes. New datasets can be added by
-# updating this dictionary.
-DATASETS: Dict[str, Type[DatasetClient]] = {
-    HotpotQADataset.dataset_name: HotpotQADataset,
+# Map dataset names to callables that build corpus datasets.
+DATA_SOURCES: Dict[str, Callable[[], CorpusDataset]] = {
+    HOTPOTQA_NAME: build_hotpotqa_data_source,
 }
 
-__all__ = ["DATASETS"]
+__all__ = ["DATA_SOURCES"]

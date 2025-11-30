@@ -5,10 +5,9 @@ from typing import Any, Callable, Optional
 
 import typer
 
-from ragwatch_client.datasets.base import DatasetClient
 from ragwatch.utils import EnvKeys, env_str
 
-from .datasets import DATASETS
+from ragwatch_client.factory import DATASETS, DatasetClient
 from .cli_params import (
     DATASET_ARGUMENT,
     INTERVAL_OPTION,
@@ -22,13 +21,13 @@ app = typer.Typer(help="Dataset-agnostic client for running RAGWatch demos.")
 
 def _load_dataset(dataset_name: str) -> DatasetClient:
     try:
-        dataset_cls = DATASETS[dataset_name]
+        dataset_builder = DATASETS[dataset_name]
     except KeyError as exc:  # pragma: no cover - CLI validation
         available = ", ".join(sorted(DATASETS.keys())) or "<none>"
         raise typer.BadParameter(
             f"Unknown dataset '{dataset_name}'. Available options: {available}."
         ) from exc
-    return dataset_cls()
+    return dataset_builder()
 
 
 def _execute_cli_command(
@@ -86,8 +85,9 @@ def stream(
 def datasets():
     """List all datasets bundled with the client."""
 
-    for dataset_name, dataset_cls in sorted(DATASETS.items()):
-        description = getattr(dataset_cls, "description", "")
+    for dataset_name, builder in sorted(DATASETS.items()):
+        client = builder()
+        description = getattr(client, "description", "")
         typer.echo(f"{dataset_name}\t{description}")
 
 

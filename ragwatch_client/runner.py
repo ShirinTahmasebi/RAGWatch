@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional
 from ragwatch import RAGMonitor
 from ragwatch.logging import ConsoleStepLogger
 
-from .datasets.base import DatasetClient, DatasetResources
+from .factory import DatasetClient, DatasetResources
 
 @dataclass(slots=True)
 class DatasetRunConfig:

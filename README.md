@@ -38,11 +38,16 @@ RAGWatch/
 ├── ragwatch_client/          # dataset-agnostic runner + CLI
 │   ├── __main__.py           # Typer CLI (python -m ragwatch_client <dataset> ...)
 │   ├── runner.py             # shared evaluation/stream harness
-│   └── datasets/
-│       └── hotpotqa/
-│           ├── data.py       # dataset loaders/dummy fallbacks
-│           ├── pipeline.py   # LangChain-based RAG chain
-│           └── retriever.py  # FAISS build/load helpers
+│   ├── datasets/
+│   │   ├── base.py           # Dataset protocol + wiring helpers/factory
+│   │   └── hotpotqa/
+│   │       └── data.py       # dataset loaders/dummy fallbacks
+│   ├── pipelines/
+│   │   ├── base.py           # RAG pipeline builder interface
+│   │   └── basic.py          # Shared LangChain-based implementation
+│   └── vectorstores/
+│       ├── base.py           # Vectorstore adapter interface
+│       └── faiss.py          # FAISS-backed adapter implementation
 ├── tests/
 │   ├── test_schema.py
 │   ├── test_writers.py
@@ -58,8 +63,7 @@ Copy `.env.template` to `.env` and fill in the required values:
 
 - `OPENAI_API_KEY`: passed to LangChain’s OpenAI clients.
 - `RAGWATCH_LOG_DIR`: base directory for JSONL logs (e.g., `logs`).
-- `RAGWATCH_HOTPOTQA_LOG_DIR`: HotpotQA-specific log directory (e.g., `logs/hotpotqa`).
-- `RAGWATCH_HOTPOTQA_INDEX_DIR`: location on disk for the FAISS index (e.g., `data/indexes/hotpotqa`).
+- `RAGWATCH_INDEX_DIR`: base directory where dataset vectorstores are stored (each dataset writes to its own subfolder).
 - `RAGWATCH_VERSION`: semantic/version label recorded with every run (e.g., `v1`).
 - `RAGWATCH_HOTPOTQA_SPLIT`: HotpotQA split to load via Hugging Face (default `validation`).
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
@@ -119,24 +123,31 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 
 ### HotpotQA dataset (`ragwatch_client.datasets.hotpotqa`)
 
-- **Data prep**: `load_questions()` / `build_document_corpus()` live in `ragwatch_client.datasets.hotpotqa.data` and still pull from the Hugging Face `hotpot_qa` dataset (with dummy fallbacks for offline/test scenarios). They respect the env-configured split/sample sizes.
-- **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` live in `...hotpotqa.retriever` and manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.utils.env_manager` handles `.env` loading.
-- **RAG chain**: `ragwatch_client.datasets.hotpotqa.pipeline.build_rag_chain()` wires the retriever output through a simple LangChain prompt and `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)`, formatting retrieved docs into a context block before querying the LLM.
-- **Generic runner**: `ragwatch_client.runner` is dataset-agnostic; it asks each dataset implementation for questions/resources, drives `RAGMonitor`, and powers both `eval` and `stream` flows.
-- **CLI**: `python -m ragwatch_client hotpotqa eval` executes a single pass, while `python -m ragwatch_client hotpotqa stream --interval 1.0` keeps answering questions in a loop (use `--max-iterations` to stop automatically).
+- **Data-only class**: `HotpotQADataSource` implements the `CorpusDataset` protocol so it only concerns itself with `load_questions()` and `build_document_corpus()` (still powered by `ragwatch_client.datasets.hotpotqa.data`).
+- **Vectorstore adapter**: `ragwatch_client.vectorstores.faiss.FaissVectorStoreAdapter` encapsulates FAISS builds/loads using the shared `RAGWATCH_INDEX_DIR`, and supports dependency-injected embeddings/paths for tests.
+- **RAG pipeline**: `ragwatch_client.pipelines.basic.BasicRAGPipelineBuilder` wires any retriever into a LangChain prompt + `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)` call.
+- **Factory wiring** (`ragwatch_client.factory`): `build_hotpotqa_dataset()` lives alongside `build_vectorstore_dataset(...)`, so all wiring of corpus/vectorstore/pipeline pieces happens outside the dataset module. Swapping adapters or prompts is now an exercise in editing the factory combo only.
+- **Generic runner & CLI**: `ragwatch_client.runner` remains dataset-agnostic while the Typer CLI instantiates the builder registered under `ragwatch_client.factory.DATASETS`.
+
+### Adding another dataset quickly
+
+1. Create `ragwatch_client/datasets/<name>/` and implement a `CorpusDataset`-compatible data source (usually a small class that calls into your `data.py`). No vectorstore/pipeline code should live here.
+2. Choose a vectorstore adapter (`FaissVectorStoreAdapter` or your own subclass of `VectorStoreAdapter`).
+3. Pick or implement a `RAGPipelineBuilder` (e.g., `BasicRAGPipelineBuilder`).
+4. In `ragwatch_client/factory/__init__.py` (or a helper it imports), wire those pieces together via `build_vectorstore_dataset(...)`, producing a `DatasetClient` builder for your dataset.
+5. Register the builder in `ragwatch_client/factory.DATASETS` so the CLI can discover it.
+6. Add env entries (log/index dirs, split/sample overrides) to `.env.template` as needed.
+
+The dataset itself stays cleanly focused on documents/questions, while the vectorstore + pipeline plumbing is swapped in via the factory.
 
 ## Usage snippet (HotpotQA prototype)
 
 ```python
-from ragwatch_client.datasets.hotpotqa.retriever import ensure_retriever
-from ragwatch_client.datasets.hotpotqa.pipeline import build_rag_chain
+from ragwatch_client.factory import build_hotpotqa_dataset
 
-# Ensure FAISS index exists (builds from dummy docs for now)
-ensure_retriever()
-
-# Build the LangChain-style RAG pipeline
-chain = build_rag_chain()
-answer = chain.invoke("Who is Barack Obama?")
+dataset = build_hotpotqa_dataset()
+resources = dataset.prepare_resources()
+answer = resources.rag_chain.invoke("Who is Barack Obama?")
 print(answer)
 ```
 
@@ -146,7 +157,7 @@ To instrument the above chain with rich telemetry, run the evaluation harness:
 python -m ragwatch_client hotpotqa eval
 ```
 
-It ensures the FAISS index exists, invokes the RAG chain over the dummy dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`; the run `version` is sourced from the `RAGWATCH_VERSION` value in your `.env` file.
+It ensures the FAISS index exists, invokes the RAG chain over the dummy dataset, and writes JSONL logs under the directory specified by `RAGWATCH_LOG_DIR`. Override the defaults by passing `--log-dir`; the run `version` is sourced from the `RAGWATCH_VERSION` value in your `.env` file.
 
 For continuous monitoring, run:
 

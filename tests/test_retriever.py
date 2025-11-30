@@ -4,7 +4,7 @@ import unittest
 
 from langchain_core.embeddings import Embeddings
 
-from ragwatch_client.datasets.hotpotqa.retriever import build_retriever, load_retriever
+from ragwatch_client.vectorstores.faiss import FaissVectorStoreAdapter
 
 
 class DummyEmbeddings(Embeddings):
@@ -30,20 +30,21 @@ def _sample_docs():
 
 
 class HotpotQARetrieverTest(unittest.TestCase):
-    def test_build_retriever_creates_index_files(self) -> None:
+    def test_build_vectorstore_creates_index_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            embeddings = DummyEmbeddings()
-            build_retriever("hotpotqa", _sample_docs(), index_dir=tmpdir, embeddings=embeddings, k=2)
+            adapter = FaissVectorStoreAdapter(index_base_dir=tmpdir, embeddings=DummyEmbeddings())
+            vectorstore = adapter.build("hotpotqa", _sample_docs())
+            self.assertIsNotNone(vectorstore)
 
-            index_dir = Path(tmpdir)
-            self.assertTrue((index_dir / "hotpotqa" / "index.faiss").exists())
-            self.assertTrue((index_dir / "hotpotqa" / "index.pkl").exists())
+            index_dir = Path(tmpdir) / "hotpotqa"
+            self.assertTrue((index_dir / "index.faiss").exists())
+            self.assertTrue((index_dir / "index.pkl").exists())
 
-    def test_load_retriever_fails_without_index(self) -> None:
-        embeddings = DummyEmbeddings()
+    def test_load_fails_without_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
+            adapter = FaissVectorStoreAdapter(index_base_dir=tmpdir, embeddings=DummyEmbeddings())
             with self.assertRaises(FileNotFoundError):
-                load_retriever(dataset_name="hotpotqa", index_dir=tmpdir, embeddings=embeddings, k=2)
+                adapter.load_if_exists("hotpotqa")
 
 
 if __name__ == "__main__":
