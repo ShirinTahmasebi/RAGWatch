@@ -60,6 +60,7 @@ Copy `.env.template` to `.env` and fill in the required values:
 - `RAGWATCH_LOG_DIR`: base directory for JSONL logs (e.g., `logs`).
 - `RAGWATCH_HOTPOTQA_LOG_DIR`: HotpotQA-specific log directory (e.g., `logs/hotpotqa`).
 - `RAGWATCH_HOTPOTQA_INDEX_DIR`: location on disk for the FAISS index (e.g., `data/indexes/hotpotqa`).
+- `RAGWATCH_VERSION`: semantic/version label recorded with every run (e.g., `v1`).
 - `RAGWATCH_HOTPOTQA_SPLIT`: HotpotQA split to load via Hugging Face (default `validation`).
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
 - `RAGWATCH_HOTPOTQA_USE_DUMMY_DATA`: Set to `true` to skip downloading HotpotQA and fall back to the tiny built-in dummy set (useful for tests/offline).
@@ -71,7 +72,7 @@ All modules resolve paths via `ragwatch.utils.env_manager`, so nothing in the co
 ### Logging & monitoring (`ragwatch`)
 
 Core components now live in focused subpackages:
-- `ragwatch.models`: houses `RetrievedDoc` and `RAGRunRecord`—Pydantic models that capture every aspect of a RAG execution (dataset/pipeline metadata, QA pairs, retrieved docs, latency metrics, token usage, and arbitrary extras).
+- `ragwatch.models`: houses `RetrievedDoc` and `RAGRunRecord`—Pydantic models that capture every aspect of a RAG execution (dataset/version metadata, QA pairs, retrieved docs, latency metrics, token usage, and arbitrary extras).
 - `ragwatch.utils`: contains `env_manager` (centralized `.env` loader + helpers) and `writers` (the `JSONLWriter` that appends serialized `RAGRunRecord` entries to disk, creating directories as needed).
 - `ragwatch.logging`: exposes the low-level `RAGWatchLogger` plus `ConsoleStepLogger`, wiring the models + writer for JSONL telemetry and optionally printing colorized console updates.
 - `ragwatch.monitor`: implements `RAGMonitor` / `SessionContext`, a thin wrapper that lets you instrument existing RAG pipelines with a `with monitor.session(...)` block, optionally enabling `log_steps` for automatic console narration of each run.
@@ -84,7 +85,7 @@ from ragwatch import RAGMonitor
 monitor = RAGMonitor(
    log_dir="logs/hotpotqa",
    dataset_name="hotpotqa",
-   pipeline_name="demo",
+   version="demo",
 )
 
 with monitor.session(question=qa["question"], session_id=qa["id"], log_steps=True) as session:
@@ -145,7 +146,7 @@ To instrument the above chain with rich telemetry, run the evaluation harness:
 python -m ragwatch_client hotpotqa eval
 ```
 
-It ensures the FAISS index exists, invokes the RAG chain over the dummy dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`, `--dataset-name`, or `--pipeline-name` flags.
+It ensures the FAISS index exists, invokes the RAG chain over the dummy dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`; the run `version` is sourced from the `RAGWATCH_VERSION` value in your `.env` file.
 
 For continuous monitoring, run:
 

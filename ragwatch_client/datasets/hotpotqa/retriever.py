@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
@@ -10,15 +10,13 @@ from langchain_openai import OpenAIEmbeddings
 
 from ragwatch.utils import EnvKeys, env_path
 
-from .data import build_document_corpus
 
 DEFAULT_TOP_K = 5
 
 
-def _resolve_index_dir(index_dir: str | Path | None) -> Path:
-    if index_dir is not None:
-        return Path(index_dir)
-    return env_path(EnvKeys.HOTPOTQA_INDEX_DIR)
+def _resolve_index_dir(dataset_name: str, index_dir: str | Path | None) -> Path:
+    base_dir = Path(index_dir) if index_dir is not None else env_path(EnvKeys.INDEX_DIR)
+    return base_dir / dataset_name
 
 
 def _ensure_index_dir(index_dir: Path) -> None:
@@ -38,12 +36,13 @@ def _to_documents(docs: List[Dict[str, str]]) -> List[Document]:
 
 def load_vectorstore(
     *,
+    dataset_name: str,
     index_dir: str | Path | None = None,
     embeddings: Optional[Embeddings] = None,
 ):
     """Load the persisted FAISS index and return the underlying vectorstore."""
 
-    index_dir = _resolve_index_dir(index_dir)
+    index_dir = _resolve_index_dir(dataset_name, index_dir)
     if not _index_files_exist(index_dir):
         raise FileNotFoundError(f"FAISS index missing at: {index_dir}")
 
@@ -56,6 +55,7 @@ def load_vectorstore(
 
 
 def build_retriever(
+    dataset_name: str,
     docs: List[Dict[str, str]],
     *,
     index_dir: str | Path | None = None,
@@ -67,7 +67,7 @@ def build_retriever(
     if not docs:
         raise ValueError("Cannot build retriever without documents")
 
-    index_dir = _resolve_index_dir(index_dir)
+    index_dir = _resolve_index_dir(dataset_name, index_dir)
     _ensure_index_dir(index_dir)
 
     embeddings = embeddings or OpenAIEmbeddings()
@@ -78,32 +78,14 @@ def build_retriever(
 
 def load_retriever(
     *,
+    dataset_name: str,
     index_dir: str | Path | None = None,
     embeddings: Optional[Embeddings] = None,
     k: int = DEFAULT_TOP_K,
 ):
     """Load an existing FAISS index and return a retriever."""
 
-    vectorstore = load_vectorstore(index_dir=index_dir, embeddings=embeddings)
+    vectorstore = load_vectorstore(dataset_name=dataset_name, index_dir=index_dir, embeddings=embeddings)
     return vectorstore.as_retriever(search_kwargs={"k": k})
 
 
-def ensure_retriever(
-    *,
-    index_dir: str | Path | None = None,
-    doc_builder: Callable[[], List[Dict[str, str]]] = build_document_corpus,
-    embeddings: Optional[Embeddings] = None,
-    k: int = DEFAULT_TOP_K,
-    force_rebuild: bool = False,
-):
-    """Load an existing retriever or build one if the index is missing."""
-
-    index_dir = _resolve_index_dir(index_dir)
-
-    if force_rebuild or not _index_files_exist(index_dir):
-        docs = doc_builder()
-        if not docs:
-            raise ValueError("Document builder returned no records; cannot create index")
-        build_retriever(docs, index_dir=index_dir, embeddings=embeddings, k=k)
-
-    return load_retriever(index_dir=index_dir, embeddings=embeddings, k=k)

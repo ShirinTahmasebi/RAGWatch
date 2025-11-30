@@ -5,22 +5,12 @@ import typer
 
 DATASET_ARGUMENT = typer.Argument(
     ...,
-    help="Dataset id (e.g., hotpotqa).",
+    help="Dataset name (e.g., hotpotqa).",
 )
 LOG_DIR_OPTION = typer.Option(
     None,
     "--log-dir",
     help="Directory for logs (overrides dataset defaults).",
-)
-DATASET_NAME_OPTION = typer.Option(
-    None,
-    "--dataset-name",
-    help="Dataset name stored in logs (defaults to dataset metadata).",
-)
-PIPELINE_NAME_OPTION = typer.Option(
-    None,
-    "--pipeline-name",
-    help="Pipeline identifier stored in logs (defaults to dataset metadata).",
 )
 INTERVAL_OPTION = typer.Option(
     1.0,

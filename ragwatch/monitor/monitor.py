@@ -33,7 +33,7 @@ class RAGMonitor:
         self,
         *,
         dataset_name: str,
-        pipeline_name: str,
+        version: str,
         log_dir: Optional[str] = None,
         log_env_var: Optional[str] = None,
         logger: Optional[RAGWatchLogger] = None,
@@ -48,7 +48,7 @@ class RAGMonitor:
         self.logger = logger or RAGWatchLogger(
             log_dir=resolved_log_dir,
             dataset_name=dataset_name,
-            pipeline_name=pipeline_name,
+            version=version,
         )
         self._step_logger = step_logger
         self._default_log_steps = default_log_steps

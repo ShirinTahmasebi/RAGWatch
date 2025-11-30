@@ -19,20 +19,12 @@ class DatasetClient(Protocol):
     """Minimal interface dataset implementations must provide."""
 
     @property
-    def id(self) -> str:
-        """Stable dataset identifier used in CLI commands."""
-
-    @property
     def description(self) -> str:
         """Human-readable summary surfaced in CLI listings."""
 
     @property
-    def default_dataset_name(self) -> str:
-        """Name stored alongside logs when user does not override it."""
-
-    @property
-    def default_pipeline_name(self) -> str:
-        """Pipeline label stored in logs when the user does not override it."""
+    def dataset_name(self) -> str:
+        """Unique dataset name used for CLI selection and log defaults."""
 
     def load_questions(self) -> List[Dict[str, Any]]:
         """Return a list of QA dicts consumed by the generic runner."""

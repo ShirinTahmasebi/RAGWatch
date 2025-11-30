@@ -7,8 +7,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 
-from .retriever import load_retriever
-
 
 def _format_docs(docs: List[Document]) -> str:
     if not docs:
@@ -16,10 +14,8 @@ def _format_docs(docs: List[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
 
-def build_rag_chain(retriever=None):
+def build_rag_chain(retriever):
     """Construct a simple question-answering chain backed by FAISS retriever."""
-
-    retriever = retriever or load_retriever()
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 
     template = ChatPromptTemplate.from_messages(

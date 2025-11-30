@@ -20,7 +20,7 @@ class RAGRunRecordSchemaTest(unittest.TestCase):
             session_id="session-abc",
             timestamp=dt.datetime.utcnow(),
             dataset_name="hotpotqa",
-            pipeline_name="hotpotqa_v1",
+            version="hotpotqa_v1",
             question="Who wrote the novel?",
             answer="It was written by Jane Doe.",
             retrieved_docs=retrieved,

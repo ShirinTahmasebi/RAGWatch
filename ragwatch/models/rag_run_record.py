@@ -17,7 +17,7 @@ class RAGRunRecord(BaseModel):
     timestamp: dt.datetime
 
     dataset_name: str
-    pipeline_name: str
+    version: str
 
     question: str
     answer: str

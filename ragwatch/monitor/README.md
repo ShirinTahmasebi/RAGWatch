@@ -33,7 +33,7 @@ Key points:
 1. Guard against double-invocation with `_finished`.
 2. Ensure a `total` latency exists (derive it from wall-clock if not provided).
 3. Merge caller-provided metadata (`metadata` argument) with accumulated extras.
-4. Call `RAGWatchLogger.log_run(...)`, which serializes a `RAGRunRecord` and appends it to the dataset/pipeline JSONL file.
+4. Call `RAGWatchLogger.log_run(...)`, which serializes a `RAGRunRecord` and appends it to the dataset/version JSONL file.
 5. Emit a `write` step log (when console logging is enabled) so operators know where the record lives.
 
 Because `finish()` lives inside `__exit__`, every path through the `with` block eventually persists a run—no orphaned sessions.

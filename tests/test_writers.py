@@ -14,7 +14,7 @@ def _sample_run_record() -> RAGRunRecord:
         session_id="session-xyz",
         timestamp=dt.datetime.utcnow(),
         dataset_name="hotpotqa",
-        pipeline_name="hotpotqa_v1",
+        version="hotpotqa_v1",
         question="Where was the author born?",
         answer="The author was born in Paris.",
         retrieved_docs=[

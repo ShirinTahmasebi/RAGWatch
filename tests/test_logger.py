@@ -13,7 +13,7 @@ class RAGWatchLoggerTest(unittest.TestCase):
             logger = RAGWatchLogger(
                 log_dir=str(log_dir),
                 dataset_name="hotpotqa",
-                pipeline_name="v1",
+                version="v1",
             )
 
             logger.log_run(
@@ -33,7 +33,7 @@ class RAGWatchLoggerTest(unittest.TestCase):
                 extra={"escalated": False},
             )
 
-            log_file = log_dir / "hotpotqa_v1.jsonl"
+            log_file = log_dir / "hotpotqa" / "hotpotqa_v1.jsonl"
             self.assertTrue(log_file.exists())
             lines = log_file.read_text(encoding="utf-8").strip().splitlines()
             self.assertEqual(len(lines), 1)

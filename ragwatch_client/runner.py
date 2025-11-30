@@ -14,7 +14,7 @@ from .datasets.base import DatasetClient, DatasetResources
 @dataclass(slots=True)
 class DatasetRunConfig:
     dataset_name: Optional[str] = None
-    pipeline_name: Optional[str] = None
+    version: Optional[str] = None
     log_dir: Optional[str] = None
     interval_seconds: float = 1.0
     max_iterations: Optional[int] = None
@@ -34,15 +34,15 @@ class PreparedContext:
         cls,
         dataset: DatasetClient,
         dataset_name: str,
-        pipeline_name: str,
+        version: str,
         log_dir_override: Optional[str],
         log_steps: bool,
     ) -> "PreparedContext":
         _log(
             "prep",
-            "Preparing resources for dataset '%s' (pipeline=%s).",
-            dataset.id,
-            pipeline_name,
+            "Preparing resources for dataset '%s' (version=%s).",
+            dataset_name,
+            version,
         )
 
         resources: DatasetResources = dataset.prepare_resources()
@@ -64,7 +64,7 @@ class PreparedContext:
 
         monitor = RAGMonitor(
             dataset_name=dataset_name,
-            pipeline_name=pipeline_name,
+            version=version,
             log_dir=log_dir_override,
             log_env_var=getattr(dataset, "log_env_var", None),
             step_logger=_STEP_LOGGER,
@@ -102,12 +102,14 @@ def _run_dataset(
     mode: Literal["eval", "stream"],
     questions: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Optional[List[Dict[str, Any]]]:
-    dataset_name = config.dataset_name
-    pipeline_name = config.pipeline_name
+    dataset_name = config.dataset_name or getattr(dataset, "dataset_name", None)
+    # TODO: Instead of checking dataset_name here, consider adding a thorough arg validation beforehand
+    if dataset_name is None:
+        raise ValueError("Dataset is missing 'dataset_name'.")
     prepared = PreparedContext.build_from_dataset(
         dataset,
         dataset_name,
-        pipeline_name,
+        config.version,
         config.log_dir,
         config.log_steps,
     )
@@ -117,23 +119,23 @@ def _run_dataset(
 
     if not qa_pairs:
         if mode == "stream":
-            _log("stream", "Dataset %s produced no questions; nothing to stream.", dataset.id)
+            _log("stream", "Dataset %s produced no questions; nothing to stream.", dataset_name)
             return None
-        _log("stream", "Dataset %s produced no questions; nothing to evaluate.", dataset.id)
+        _log("stream", "Dataset %s produced no questions; nothing to evaluate.", dataset_name)
         return []
 
     if mode == "eval":
         _log(
             "stream",
             "Starting %s evaluation over %d questions.",
-            dataset.id,
+            dataset_name,
             len(qa_pairs),
         )
     else:
         _log(
             "stream",
             "Starting %s stream (interval=%.2fs, max_iterations=%s).",
-            dataset.id,
+            dataset_name,
             config.interval_seconds,
             config.max_iterations if config.max_iterations is not None else "∞",
         )
@@ -144,7 +146,7 @@ def _run_dataset(
     for idx, qa in enumerate(qa_pairs, start=1):
         summary = _execute_single_question(
             qa=qa,
-            default_session=f"{dataset.id}-{idx}",
+            default_session=f"{dataset_name}-{idx}",
             monitor=prepared.monitor,
             vectorstore=prepared.vectorstore,
             rag=prepared.rag_chain,

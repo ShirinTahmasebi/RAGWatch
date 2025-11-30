@@ -26,7 +26,7 @@ class RecordingStepLogger:
 class RAGMonitorTest(unittest.TestCase):
     def test_session_logs_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            monitor = RAGMonitor(dataset_name="demo", pipeline_name="p1", log_dir=tmpdir)
+            monitor = RAGMonitor(dataset_name="demo", version="p1", log_dir=tmpdir)
             question = "What is retrieval-augmented generation?"
 
             with monitor.session(question=question, session_id="sess-1") as session:
@@ -48,7 +48,7 @@ class RAGMonitorTest(unittest.TestCase):
                 session.set_gold_answer("A hybrid pipeline")
                 session.add_extra(tag="unit-test")
 
-            log_path = Path(tmpdir) / "demo_p1.jsonl"
+            log_path = Path(tmpdir) / "demo" / "demo_p1.jsonl"
             self.assertTrue(log_path.exists())
             payload = json.loads(log_path.read_text().strip())
             self.assertEqual(payload["session_id"], "sess-1")
@@ -60,14 +60,14 @@ class RAGMonitorTest(unittest.TestCase):
 
     def test_record_retrieval_normalizes_documents(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            monitor = RAGMonitor(dataset_name="demo", pipeline_name="p2", log_dir=tmpdir)
+            monitor = RAGMonitor(dataset_name="demo", version="p2", log_dir=tmpdir)
             doc = DummyDoc(doc_id="doc-2", source="dummy", title="Dummy Title")
 
             with monitor.session(question="Test?", session_id="sess-2") as session:
                 session.record_retrieval([(doc, 0.99)])
                 session.record_answer("ok")
 
-            payload = json.loads((Path(tmpdir) / "demo_p2.jsonl").read_text().strip())
+            payload = json.loads((Path(tmpdir) / "demo" / "demo_p2.jsonl").read_text().strip())
             retrieved = payload["retrieved_docs"]
             self.assertEqual(len(retrieved), 1)
             self.assertEqual(retrieved[0]["doc_id"], "doc-2")
@@ -78,7 +78,7 @@ class RAGMonitorTest(unittest.TestCase):
             recorder = RecordingStepLogger()
             monitor = RAGMonitor(
                 dataset_name="demo",
-                pipeline_name="p3",
+                version="p3",
                 log_dir=tmpdir,
                 step_logger=recorder,
             )
@@ -100,17 +100,17 @@ class RAGMonitorTest(unittest.TestCase):
     def test_monitor_uses_env_log_dir_when_not_provided(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {EnvKeys.LOG_DIR: tmpdir}, clear=False):
-                monitor = RAGMonitor(dataset_name="demo", pipeline_name="p4")
+                monitor = RAGMonitor(dataset_name="demo", version="p4")
                 with monitor.session(question="Env?", session_id="sess-env") as session:
                     session.record_answer("ok")
-            log_path = Path(tmpdir) / "demo_p4.jsonl"
+            log_path = Path(tmpdir) / "demo" / "demo_p4.jsonl"
             self.assertTrue(log_path.exists())
 
     def test_monitor_requires_log_dir_when_env_missing(self):
         original = os.environ.pop(EnvKeys.LOG_DIR, None)
         try:
             with self.assertRaises(RuntimeError):
-                RAGMonitor(dataset_name="demo", pipeline_name="p5")
+                RAGMonitor(dataset_name="demo", version="p5")
         finally:
             if original is not None:
                 os.environ[EnvKeys.LOG_DIR] = original

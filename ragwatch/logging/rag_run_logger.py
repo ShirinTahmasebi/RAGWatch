@@ -12,10 +12,10 @@ from ..utils import JSONLWriter
 class RAGWatchLogger:
     """Convenience wrapper that records RAG runs to a JSONL log."""
 
-    def __init__(self, log_dir: str, dataset_name: str, pipeline_name: str):
+    def __init__(self, log_dir: str, dataset_name: str, version: str):
         self.dataset_name = dataset_name
-        self.pipeline_name = pipeline_name
-        log_file = f"{log_dir}/{dataset_name}_{pipeline_name}.jsonl"
+        self.version = version
+        log_file = f"{log_dir}/{dataset_name}/{dataset_name}_{version}.jsonl"
         self.writer = JSONLWriter(log_file)
 
     def new_run_id(self) -> str:
@@ -36,7 +36,7 @@ class RAGWatchLogger:
             session_id=session_id,
             timestamp=dt.datetime.utcnow(),
             dataset_name=self.dataset_name,
-            pipeline_name=self.pipeline_name,
+            version=self.version,
             question=question,
             answer=answer,
             retrieved_docs=[RetrievedDoc(**doc) for doc in retrieved_docs],

@@ -4,11 +4,7 @@ import unittest
 
 from langchain_core.embeddings import Embeddings
 
-from ragwatch_client.datasets.hotpotqa.retriever import (
-    build_retriever,
-    ensure_retriever,
-    load_retriever,
-)
+from ragwatch_client.datasets.hotpotqa.retriever import build_retriever, load_retriever
 
 
 class DummyEmbeddings(Embeddings):
@@ -37,43 +33,17 @@ class HotpotQARetrieverTest(unittest.TestCase):
     def test_build_retriever_creates_index_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             embeddings = DummyEmbeddings()
-            build_retriever(_sample_docs(), index_dir=tmpdir, embeddings=embeddings, k=2)
+            build_retriever("hotpotqa", _sample_docs(), index_dir=tmpdir, embeddings=embeddings, k=2)
 
             index_dir = Path(tmpdir)
-            self.assertTrue((index_dir / "index.faiss").exists())
-            self.assertTrue((index_dir / "index.pkl").exists())
-
-    def test_ensure_retriever_reuses_existing_index(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            embeddings = DummyEmbeddings()
-            builder_calls = {"count": 0}
-
-            def builder():
-                builder_calls["count"] += 1
-                return _sample_docs()
-
-            retriever = ensure_retriever(
-                index_dir=tmpdir,
-                doc_builder=builder,
-                embeddings=embeddings,
-                k=2,
-            )
-            self.assertIsNotNone(retriever)
-            self.assertEqual(builder_calls["count"], 1)
-
-            ensure_retriever(
-                index_dir=tmpdir,
-                doc_builder=builder,
-                embeddings=embeddings,
-                k=2,
-            )
-            self.assertEqual(builder_calls["count"], 1)
+            self.assertTrue((index_dir / "hotpotqa" / "index.faiss").exists())
+            self.assertTrue((index_dir / "hotpotqa" / "index.pkl").exists())
 
     def test_load_retriever_fails_without_index(self) -> None:
         embeddings = DummyEmbeddings()
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(FileNotFoundError):
-                load_retriever(index_dir=tmpdir, embeddings=embeddings, k=2)
+                load_retriever(dataset_name="hotpotqa", index_dir=tmpdir, embeddings=embeddings, k=2)
 
 
 if __name__ == "__main__":
