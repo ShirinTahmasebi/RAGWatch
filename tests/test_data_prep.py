@@ -1,24 +1,24 @@
 import os
 import unittest
 
+from ragwatch.utils import EnvKeys
 from ragwatch_client.datasets.hotpotqa import data as data_prep
 
 
 class HotpotQADataPrepTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._orig_stub = os.environ.get("RAGWATCH_HOTPOTQA_USE_STUBS")
-        os.environ["RAGWATCH_HOTPOTQA_USE_STUBS"] = "true"
+        self._orig_dummy_flag = os.environ.get(EnvKeys.HOTPOTQA_USE_DUMMY_DATA)
+        os.environ[EnvKeys.HOTPOTQA_USE_DUMMY_DATA] = "true"
         data_prep.clear_hotpotqa_cache()
 
     def tearDown(self) -> None:
-        if self._orig_stub is None:
-            os.environ.pop("RAGWATCH_HOTPOTQA_USE_STUBS", None)
+        if self._orig_dummy_flag is None:
+            os.environ.pop(EnvKeys.HOTPOTQA_USE_DUMMY_DATA, None)
         else:
-            os.environ["RAGWATCH_HOTPOTQA_USE_STUBS"] = self._orig_stub
+            os.environ[EnvKeys.HOTPOTQA_USE_DUMMY_DATA] = self._orig_dummy_flag
         data_prep.clear_hotpotqa_cache()
 
-
-    def test_load_questions_returns_stub_entry(self) -> None:
+    def test_load_questions_returns_dummy_entry(self) -> None:
         questions = data_prep.load_questions()
         self.assertGreaterEqual(len(questions), 1)
         sample = questions[0]
@@ -26,7 +26,7 @@ class HotpotQADataPrepTest(unittest.TestCase):
         self.assertIn("question", sample)
         self.assertIn("answer", sample)
 
-    def test_build_document_corpus_returns_stub_doc(self) -> None:
+    def test_build_document_corpus_returns_dummy_doc(self) -> None:
         docs = data_prep.build_document_corpus()
         self.assertGreaterEqual(len(docs), 1)
         doc = docs[0]

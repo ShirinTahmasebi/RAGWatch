@@ -40,7 +40,7 @@ RAGWatch/
 │   ├── runner.py             # shared evaluation/stream harness
 │   └── datasets/
 │       └── hotpotqa/
-│           ├── data.py       # dataset loaders/stubs
+│           ├── data.py       # dataset loaders/dummy fallbacks
 │           ├── pipeline.py   # LangChain-based RAG chain
 │           └── retriever.py  # FAISS build/load helpers
 ├── tests/
@@ -62,7 +62,7 @@ Copy `.env.template` to `.env` and fill in the required values:
 - `RAGWATCH_HOTPOTQA_INDEX_DIR`: location on disk for the FAISS index (e.g., `data/indexes/hotpotqa`).
 - `RAGWATCH_HOTPOTQA_SPLIT`: HotpotQA split to load via Hugging Face (default `validation`).
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
-- `RAGWATCH_HOTPOTQA_USE_STUBS`: Set to `true` to skip downloading HotpotQA and fall back to the tiny built-in stubs (useful for tests/offline).
+- `RAGWATCH_HOTPOTQA_USE_DUMMY_DATA`: Set to `true` to skip downloading HotpotQA and fall back to the tiny built-in dummy set (useful for tests/offline).
 
 All modules resolve paths via `ragwatch.utils.env_manager`, so nothing in the codebase hardcodes directories anymore.
 
@@ -118,7 +118,7 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 
 ### HotpotQA dataset (`ragwatch_client.datasets.hotpotqa`)
 
-- **Data prep**: `load_questions()` / `build_document_corpus()` live in `ragwatch_client.datasets.hotpotqa.data` and still pull from the Hugging Face `hotpot_qa` dataset (with stub fallbacks for offline/test scenarios). They respect the env-configured split/sample sizes.
+- **Data prep**: `load_questions()` / `build_document_corpus()` live in `ragwatch_client.datasets.hotpotqa.data` and still pull from the Hugging Face `hotpot_qa` dataset (with dummy fallbacks for offline/test scenarios). They respect the env-configured split/sample sizes.
 - **Retriever**: `build_retriever`, `load_retriever`, `load_vectorstore`, and `ensure_retriever` live in `...hotpotqa.retriever` and manage the FAISS index stored at `RAGWATCH_HOTPOTQA_INDEX_DIR`. They accept dependency-injected embeddings/doc sources for testing, while `ragwatch.utils.env_manager` handles `.env` loading.
 - **RAG chain**: `ragwatch_client.datasets.hotpotqa.pipeline.build_rag_chain()` wires the retriever output through a simple LangChain prompt and `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)`, formatting retrieved docs into a context block before querying the LLM.
 - **Generic runner**: `ragwatch_client.runner` is dataset-agnostic; it asks each dataset implementation for questions/resources, drives `RAGMonitor`, and powers both `eval` and `stream` flows.
@@ -130,7 +130,7 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 from ragwatch_client.datasets.hotpotqa.retriever import ensure_retriever
 from ragwatch_client.datasets.hotpotqa.pipeline import build_rag_chain
 
-# Ensure FAISS index exists (builds from stub docs for now)
+# Ensure FAISS index exists (builds from dummy docs for now)
 ensure_retriever()
 
 # Build the LangChain-style RAG pipeline
@@ -145,7 +145,7 @@ To instrument the above chain with rich telemetry, run the evaluation harness:
 python -m ragwatch_client hotpotqa eval
 ```
 
-It ensures the FAISS index exists, invokes the RAG chain over the stub dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`, `--dataset-name`, or `--pipeline-name` flags.
+It ensures the FAISS index exists, invokes the RAG chain over the dummy dataset, and writes JSONL logs under the directory specified by `RAGWATCH_HOTPOTQA_LOG_DIR`. Override the defaults by passing `--log-dir`, `--dataset-name`, or `--pipeline-name` flags.
 
 For continuous monitoring, run:
 
@@ -153,7 +153,7 @@ For continuous monitoring, run:
 python -m ragwatch_client hotpotqa stream --interval 1.0 --max-iterations 10
 ```
 
-This repeatedly samples questions (cycling through the stub set for now), waits the requested interval between calls, and logs each result so you can watch performance trends over time.
+This repeatedly samples questions (cycling through the dummy set for now), waits the requested interval between calls, and logs each result so you can watch performance trends over time.
 
 ## Next steps
 - Replace the placeholder HotpotQA loaders with real data ingestion + chunking.

@@ -3,16 +3,18 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from ragwatch.utils import EnvKeys
+
 from ..base import DatasetClient, DatasetResources
 from . import data, pipeline, retriever
 
 
 class HotpotQADataset(DatasetClient):
-    slug = "hotpotqa"
+    id = "hotpotqa"
     description = "LangChain demo pipeline answering HotpotQA questions."
     default_dataset_name = "hotpotqa"
     default_pipeline_name = "v1"
-    log_env_var = "RAGWATCH_HOTPOTQA_LOG_DIR"
+    log_env_var = EnvKeys.HOTPOTQA_LOG_DIR
     default_top_k = retriever.DEFAULT_TOP_K
 
     def load_questions(self) -> List[Dict[str, Any]]:

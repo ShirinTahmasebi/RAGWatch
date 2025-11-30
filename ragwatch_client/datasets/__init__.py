@@ -1,10 +1,15 @@
-"""Dataset registry for ragwatch_client."""
+"""Dataset catalog for ragwatch_client."""
 from __future__ import annotations
 
-from .base import DatasetRegistry
+from typing import Dict, Type
+
+from .base import DatasetClient
 from .hotpotqa import HotpotQADataset
 
-registry = DatasetRegistry()
-registry.register(HotpotQADataset())
+# Map dataset IDs to their implementing classes. New datasets can be added by
+# updating this dictionary.
+DATASETS: Dict[str, Type[DatasetClient]] = {
+	HotpotQADataset.id: HotpotQADataset,
+}
 
-__all__ = ["registry"]
+__all__ = ["DATASETS"]

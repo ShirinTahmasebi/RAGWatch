@@ -8,8 +8,9 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
+from ragwatch.utils import EnvKeys, env_path
+
 from .data import build_document_corpus
-from ragwatch.utils import env_path
 
 DEFAULT_TOP_K = 5
 
@@ -17,7 +18,7 @@ DEFAULT_TOP_K = 5
 def _resolve_index_dir(index_dir: str | Path | None) -> Path:
     if index_dir is not None:
         return Path(index_dir)
-    return env_path("RAGWATCH_HOTPOTQA_INDEX_DIR")
+    return env_path(EnvKeys.HOTPOTQA_INDEX_DIR)
 
 
 def _ensure_index_dir(index_dir: Path) -> None:

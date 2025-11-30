@@ -6,12 +6,14 @@ import logging
 import os
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ragwatch.utils import EnvKeys
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SPLIT = "validation"
 DEFAULT_SAMPLE_SIZE = 25
 
-_STUB_QUESTIONS = [
+_DUMMY_QUESTIONS = [
     {
         "id": "q1",
         "question": "Who is Barack Obama?",
@@ -24,7 +26,7 @@ _STUB_QUESTIONS = [
     },
 ]
 
-_STUB_DOCS = [
+_DUMMY_DOCS = [
     {
         "doc_id": "d1",
         "title": "Obama",
@@ -39,11 +41,11 @@ _STUB_DOCS = [
 
 
 def load_questions(sample_size: Optional[int] = None) -> List[Dict[str, str]]:
-    """Load questions/answers from the HotpotQA split (fallback to stubs)."""
+    """Load questions/answers from the HotpotQA split (fallback to dummy data)."""
 
     dataset = _maybe_get_dataset()
     if dataset is None:
-        return _STUB_QUESTIONS[: sample_size or len(_STUB_QUESTIONS)]
+        return _DUMMY_QUESTIONS[: sample_size or len(_DUMMY_QUESTIONS)]
 
     limit = sample_size or _sample_size()
     records: List[Dict[str, str]] = []
@@ -59,15 +61,15 @@ def load_questions(sample_size: Optional[int] = None) -> List[Dict[str, str]]:
         if limit and len(records) >= limit:
             break
 
-    return records or _STUB_QUESTIONS[: limit or len(_STUB_QUESTIONS)]
+    return records or _DUMMY_QUESTIONS[: limit or len(_DUMMY_QUESTIONS)]
 
 
 def build_document_corpus(sample_size: Optional[int] = None) -> List[Dict[str, str]]:
-    """Build a corpus of documents derived from HotpotQA contexts (or stubs)."""
+    """Build a corpus of documents derived from HotpotQA contexts (or dummy data)."""
 
     dataset = _maybe_get_dataset()
     if dataset is None:
-        return _STUB_DOCS[: sample_size or len(_STUB_DOCS)]
+        return _DUMMY_DOCS[: sample_size or len(_DUMMY_DOCS)]
 
     limit = sample_size or _sample_size()
     docs: Dict[str, Dict[str, str]] = {}
@@ -86,7 +88,7 @@ def build_document_corpus(sample_size: Optional[int] = None) -> List[Dict[str, s
             if limit and len(docs) >= limit:
                 return list(docs.values())
 
-    return list(docs.values()) or _STUB_DOCS[: limit or len(_STUB_DOCS)]
+    return list(docs.values()) or _DUMMY_DOCS[: limit or len(_DUMMY_DOCS)]
 
 
 def _iter_context_entries(raw_context: Any) -> Iterable[Tuple[str, Any]]:
@@ -134,21 +136,21 @@ def clear_hotpotqa_cache() -> None:
 
 
 def _maybe_get_dataset():
-    if _use_stubs():
+    if _use_dummy_data():
         return None
     try:
         return _load_hotpotqa_split(_target_split())
     except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.warning("Falling back to stub HotpotQA data: %s", exc)
+        logger.warning("Falling back to dummy HotpotQA data: %s", exc)
         return None
 
 
 def _target_split() -> str:
-    return os.getenv("RAGWATCH_HOTPOTQA_SPLIT", DEFAULT_SPLIT)
+    return os.getenv(EnvKeys.HOTPOTQA_SPLIT, DEFAULT_SPLIT)
 
 
 def _sample_size() -> int:
-    raw = os.getenv("RAGWATCH_HOTPOTQA_SAMPLE_SIZE", str(DEFAULT_SAMPLE_SIZE))
+    raw = os.getenv(EnvKeys.HOTPOTQA_SAMPLE_SIZE, str(DEFAULT_SAMPLE_SIZE))
     try:
         value = int(raw)
         return value if value > 0 else DEFAULT_SAMPLE_SIZE
@@ -156,8 +158,8 @@ def _sample_size() -> int:
         return DEFAULT_SAMPLE_SIZE
 
 
-def _use_stubs() -> bool:
-    return os.getenv("RAGWATCH_HOTPOTQA_USE_STUBS", "false").lower() == "true"
+def _use_dummy_data() -> bool:
+    return os.getenv(EnvKeys.HOTPOTQA_USE_DUMMY_DATA, "false").lower() == "true"
 
 
 @lru_cache(maxsize=1)

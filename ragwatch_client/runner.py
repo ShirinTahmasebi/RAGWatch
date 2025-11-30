@@ -4,12 +4,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from itertools import cycle
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from ragwatch import RAGMonitor
 from ragwatch.logging import ConsoleStepLogger
-from ragwatch.utils import env_str
 
 from .datasets.base import DatasetClient, DatasetResources
 
@@ -31,46 +29,82 @@ class PreparedContext:
     top_k: int
     log_steps: bool
 
-
-def run_eval(dataset: DatasetClient, config: Optional[DatasetRunConfig] = None) -> List[Dict[str, Any]]:
-    config = config or DatasetRunConfig()
-    dataset_name, pipeline_name = _resolve_names(dataset, config)
-    prepared = _prepare_context(dataset, dataset_name, pipeline_name, config.log_dir, config.log_steps)
-
-    qa_pairs = dataset.load_questions()
-    summaries: List[Dict[str, Any]] = []
-
-    _log(
-        "stream",
-        "Starting %s evaluation over %d questions.",
-        dataset.slug,
-        len(qa_pairs),
-    )
-
-    for idx, qa in enumerate(qa_pairs, start=1):
-        summary = _execute_single_question(
-            qa=qa,
-            default_session=f"{dataset.slug}-{idx}",
-            monitor=prepared.monitor,
-            vectorstore=prepared.vectorstore,
-            rag=prepared.rag_chain,
-            top_k=prepared.top_k,
-            log_steps=prepared.log_steps,
+    @classmethod
+    def build_from_dataset(
+        cls,
+        dataset: DatasetClient,
+        dataset_name: str,
+        pipeline_name: str,
+        log_dir_override: Optional[str],
+        log_steps: bool,
+    ) -> "PreparedContext":
+        _log(
+            "prep",
+            "Preparing resources for dataset '%s' (pipeline=%s).",
+            dataset.id,
+            pipeline_name,
         )
-        summaries.append(summary)
 
-    return summaries
+        resources: DatasetResources = dataset.prepare_resources()
+        metadata = resources.metadata or {}
+
+        if metadata.get("doc_count") is not None:
+            _log("prep", "Document corpus ready with %d entries.", metadata["doc_count"])
+        if metadata.get("vectorstore_source"):
+            _log("vector", "FAISS index %s successfully.", metadata["vectorstore_source"])
+
+        retriever_top_k = int(
+            metadata.get(
+                "top_k",
+                getattr(dataset, "default_top_k", 5),
+            )
+        )
+        _log("retriever", "Retriever initialised (top_k=%d).", retriever_top_k)
+        _log("rag", "RAG chain constructed and ready for questions.")
+
+        monitor = RAGMonitor(
+            dataset_name=dataset_name,
+            pipeline_name=pipeline_name,
+            log_dir=log_dir_override,
+            log_env_var=getattr(dataset, "log_env_var", None),
+            step_logger=_STEP_LOGGER,
+            default_log_steps=log_steps,
+        )
+
+        return cls(
+            monitor=monitor,
+            vectorstore=resources.vectorstore,
+            rag_chain=resources.rag_chain,
+            top_k=retriever_top_k,
+            log_steps=log_steps,
+        )
+
+
+def run_eval(dataset: DatasetClient, config: DatasetRunConfig) -> List[Dict[str, Any]]:
+    return _run_dataset(dataset, config, mode="eval")
 
 
 def run_stream(
     dataset: DatasetClient,
-    config: Optional[DatasetRunConfig] = None,
+    config: DatasetRunConfig,
     *,
     questions: Optional[Iterable[Dict[str, Any]]] = None,
 ):
-    config = config or DatasetRunConfig()
-    dataset_name, pipeline_name = _resolve_names(dataset, config)
-    prepared = _prepare_context(
+    _run_dataset(dataset, config, mode="stream", questions=questions)
+
+
+# ----- Internal helpers ------------------------------------------------------------
+
+def _run_dataset(
+    dataset: DatasetClient,
+    config: DatasetRunConfig,
+    *,
+    mode: Literal["eval", "stream"],
+    questions: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    dataset_name = config.dataset_name
+    pipeline_name = config.pipeline_name
+    prepared = PreparedContext.build_from_dataset(
         dataset,
         dataset_name,
         pipeline_name,
@@ -78,39 +112,54 @@ def run_stream(
         config.log_steps,
     )
 
-    source = questions or dataset.load_questions()
-    materialized = list(source)
-    if not materialized:
-        _log("stream", "Dataset %s produced no questions; nothing to stream.", dataset.slug)
-        return
+    source = questions if questions is not None else dataset.load_questions()
+    qa_pairs = list(source)
 
-    _log(
-        "stream",
-        "Starting %s stream (interval=%.2fs, max_iterations=%s).",
-        dataset.slug,
-        config.interval_seconds,
-        config.max_iterations if config.max_iterations is not None else "∞",
-    )
+    if not qa_pairs:
+        if mode == "stream":
+            _log("stream", "Dataset %s produced no questions; nothing to stream.", dataset.id)
+            return None
+        _log("stream", "Dataset %s produced no questions; nothing to evaluate.", dataset.id)
+        return []
 
+    if mode == "eval":
+        _log(
+            "stream",
+            "Starting %s evaluation over %d questions.",
+            dataset.id,
+            len(qa_pairs),
+        )
+    else:
+        _log(
+            "stream",
+            "Starting %s stream (interval=%.2fs, max_iterations=%s).",
+            dataset.id,
+            config.interval_seconds,
+            config.max_iterations if config.max_iterations is not None else "∞",
+        )
+
+    summaries: List[Dict[str, Any]] = []
     iterations = 0
 
-    for idx, qa in enumerate(materialized, start=1):
-        _execute_single_question(
+    for idx, qa in enumerate(qa_pairs, start=1):
+        summary = _execute_single_question(
             qa=qa,
-            default_session=f"{dataset.slug}-{idx}",
+            default_session=f"{dataset.id}-{idx}",
             monitor=prepared.monitor,
             vectorstore=prepared.vectorstore,
             rag=prepared.rag_chain,
             top_k=prepared.top_k,
             log_steps=prepared.log_steps,
         )
-        iterations += 1
-        if config.max_iterations is not None and iterations >= config.max_iterations:
-            break
-        time.sleep(config.interval_seconds)
+        if mode == "eval":
+            summaries.append(summary)
+        else:
+            iterations += 1
+            if config.max_iterations is not None and iterations >= config.max_iterations:
+                break
+            time.sleep(config.interval_seconds)
 
-
-# ----- Internal helpers ------------------------------------------------------------
+    return summaries if mode == "eval" else None
 
 
 _STEP_LOGGER = ConsoleStepLogger()
@@ -118,80 +167,6 @@ _STEP_LOGGER = ConsoleStepLogger()
 
 def _log(stage: str, message: str, *args, level: int = logging.INFO, exc_info=False) -> None:
     _STEP_LOGGER.log(stage, message, *args, level=level, exc_info=exc_info)
-
-
-def _prepare_context(
-    dataset: DatasetClient,
-    dataset_name: str,
-    pipeline_name: str,
-    log_dir_override: Optional[str],
- 	log_steps: bool,
-) -> PreparedContext:
-    _log(
-        "prep",
-        "Preparing resources for dataset '%s' (pipeline=%s).",
-        dataset.slug,
-        pipeline_name,
-    )
-
-    resources: DatasetResources = dataset.prepare_resources()
-    metadata = resources.metadata or {}
-
-    if metadata.get("doc_count") is not None:
-        _log("prep", "Document corpus ready with %d entries.", metadata["doc_count"])
-    if metadata.get("vectorstore_source"):
-        _log("vector", "FAISS index %s successfully.", metadata["vectorstore_source"])
-
-    retriever_top_k = int(
-        metadata.get(
-            "top_k",
-            getattr(dataset, "default_top_k", 5),
-        )
-    )
-    _log("retriever", "Retriever initialised (top_k=%d).", retriever_top_k)
-    _log("rag", "RAG chain constructed and ready for questions.")
-
-    resolved_log_dir = _resolve_log_dir(dataset, log_dir_override)
-    monitor = RAGMonitor(
-        dataset_name=dataset_name,
-        pipeline_name=pipeline_name,
-        log_dir=resolved_log_dir,
-        step_logger=_STEP_LOGGER,
-        default_log_steps=log_steps,
-    )
-
-    return PreparedContext(
-        monitor=monitor,
-        vectorstore=resources.vectorstore,
-        rag_chain=resources.rag_chain,
-        top_k=retriever_top_k,
-        log_steps=log_steps,
-    )
-
-
-def _resolve_log_dir(dataset: DatasetClient, override: Optional[str]) -> str:
-    if override:
-        return override
-
-    env_var = getattr(dataset, "log_env_var", None)
-    if env_var:
-        try:
-            return env_str(env_var)
-        except RuntimeError:
-            pass
-
-    try:
-        return env_str("RAGWATCH_LOG_DIR")
-    except RuntimeError as exc:
-        raise RuntimeError(
-            "Log directory not configured. Provide --log-dir or set RAGWATCH_LOG_DIR."
-        ) from exc
-
-
-def _resolve_names(dataset: DatasetClient, config: DatasetRunConfig) -> Tuple[str, str]:
-    dataset_name = config.dataset_name or getattr(dataset, "default_dataset_name", dataset.slug)
-    pipeline_name = config.pipeline_name or getattr(dataset, "default_pipeline_name", "default")
-    return dataset_name, pipeline_name
 
 
 def _execute_single_question(

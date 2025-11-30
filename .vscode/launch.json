@@ -8,8 +8,8 @@
             "module": "ragwatch_client",
             "justMyCode": true,
             "args": [
-                "hotpotqa",
                 "stream",
+                "hotpotqa",
                 "--interval",
                 "1.0",
                 "--max-iterations",

@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Protocol, Sequence, Tuple, Union
 
 from ..logging import ConsoleStepLogger, RAGWatchLogger
+from ..utils import resolve_log_dir
 
 RetrievedDocLike = Dict[str, Any]
 RawDocument = Any
@@ -33,13 +34,19 @@ class RAGMonitor:
         *,
         dataset_name: str,
         pipeline_name: str,
-        log_dir: str,
+        log_dir: Optional[str] = None,
+        log_env_var: Optional[str] = None,
         logger: Optional[RAGWatchLogger] = None,
         step_logger: Optional[StepLoggerLike] = None,
         default_log_steps: bool = False,
     ) -> None:
+        resolved_log_dir = resolve_log_dir(
+            override=log_dir,
+            dataset_env_var=log_env_var,
+        )
+
         self.logger = logger or RAGWatchLogger(
-            log_dir=log_dir,
+            log_dir=resolved_log_dir,
             dataset_name=dataset_name,
             pipeline_name=pipeline_name,
         )
