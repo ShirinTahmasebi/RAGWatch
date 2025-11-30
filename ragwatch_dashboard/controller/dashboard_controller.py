@@ -43,6 +43,7 @@ class DashboardController:
         self.navigate_to(Pages.monitor_details)
 
     def go_home(self) -> None:
+        self.state[States.SELECT_MONITOR_ID] = None
         self.navigate_to(Pages.home)
 
     # ------------------------------------------------------------------

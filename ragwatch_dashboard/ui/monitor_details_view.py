@@ -21,46 +21,31 @@ def render_monitor_details(controller: DashboardController) -> None:
         st.info("Select a monitor from the sidebar to see its KPIs and alerts.")
         return
 
-    st.header(f'Details for Monitor "{monitor.get(Fields.NAME, "Unknown")}"', divider="gray")
+    st.button(
+        "←  Back to dashboard",
+        key="btn_back_to_home",
+        type="secondary",
+        on_click=controller.go_home,
+    )
+
+    st.header(monitor.get(Fields.NAME, "Monitor"))
+    st.caption(f"{monitor.get(Fields.IP, '-')}: {monitor.get(Fields.PORT, '-')} • every {monitor.get(Fields.INTERNAL, '-') } minutes")
+
     _render_static_details(monitor)
-    _render_kpis(controller, selected_monitor_id)
-    _render_alerts(controller, selected_monitor_id)
+
+    kpi_tab, alerts_tab = st.tabs(["KPI trends", "Alerts"])
+    with kpi_tab:
+        _render_kpis(controller, selected_monitor_id)
+    with alerts_tab:
+        _render_alerts(controller, selected_monitor_id)
 
 
 def _render_static_details(monitor: dict) -> None:
-    cols = st.columns(4)
-    cols[0].write("Monitoring Name:")
-    cols[1].text_input(
-        "Hidden Label",
-        label_visibility="collapsed",
-        disabled=True,
-        placeholder=monitor.get(Fields.NAME, "-"),
-    )
-
-    cols[2].write("Monitoring Address:")
-    cols[3].text_input(
-        "Hidden Label",
-        label_visibility="collapsed",
-        disabled=True,
-        placeholder=f"{monitor.get(Fields.IP, '-')}: {monitor.get(Fields.PORT, '-')}",
-    )
-
-    cols = st.columns(4)
-    cols[0].write("Monitoring Interval:")
-    cols[1].text_input(
-        "Hidden Label",
-        label_visibility="collapsed",
-        disabled=True,
-        placeholder=f"{monitor.get(Fields.INTERNAL, '-')}",
-    )
-
-    cols[2].write("Modules to Monitor:")
-    cols[3].selectbox(
-        "Hidden Label",
-        disabled=True,
-        options=[monitor.get(Fields.MONITORING_MODULES, "-")],
-        label_visibility="collapsed",
-    )
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Interval (min)", monitor.get(Fields.INTERNAL, "-"))
+    col2.metric("Modules", monitor.get(Fields.MONITORING_MODULES, "-"))
+    col3.metric("IP", monitor.get(Fields.IP, "-"))
+    col4.metric("Port", monitor.get(Fields.PORT, "-"))
 
 
 def _grouped_kpis() -> List[Tuple[KPIGroup, List[KPIConfig]]]:
@@ -74,7 +59,6 @@ def _grouped_kpis() -> List[Tuple[KPIGroup, List[KPIConfig]]]:
 
 
 def _render_kpis(controller: DashboardController, monitor_id: str | None) -> None:
-    st.subheader("Collected KPIs")
     if not monitor_id:
         st.info("No monitor selected.")
         return
@@ -90,19 +74,19 @@ def _render_kpis(controller: DashboardController, monitor_id: str | None) -> Non
     for group, group_kpis in _grouped_kpis():
         with st.expander(group.label):
             for kpi in group_kpis:
-                container = st.container(border=True)
-                container.markdown(f"**{kpi.label}**")
-                container.caption(kpi.description)
+                card = st.container(border=True)
+                card.markdown(f"**{kpi.label}**")
+                card.caption(kpi.description)
 
                 if kpi.key not in df.columns:
-                    container.write("No datapoints yet.")
+                    card.info("No datapoints yet.")
                     continue
 
                 series = df[kpi.key].dropna()
                 if series.empty:
-                    container.write("No datapoints yet.")
+                    card.info("No datapoints yet.")
                 else:
-                    container.line_chart(
+                    card.line_chart(
                         data=series,
                         y_label=kpi.label,
                         x_label="Timestamp",
@@ -112,7 +96,6 @@ def _render_kpis(controller: DashboardController, monitor_id: str | None) -> Non
 
 
 def _render_alerts(controller: DashboardController, monitor_id: str | None) -> None:
-    st.subheader("Alerts")
     if not monitor_id:
         st.info("No monitor selected.")
         return
@@ -134,24 +117,13 @@ def _render_alerts(controller: DashboardController, monitor_id: str | None) -> N
 
 
 def _render_alert_table(df: pd.DataFrame) -> None:
-    con = st.container(border=False, height=350)
+    con = st.container(border=False)
     alert_colors = {
         AlertType.INCREASE.value: ("#fff3cd88", "#ffc107"),
         AlertType.DROP.value: ("#d0b4e085", "#7f28a7"),
         AlertType.SPIKE.value: ("#f8d7da88", "#dc3545"),
         AlertType.NONE.value: ("#f0f0f088", "#6c757d"),
     }
-
-    con.markdown(
-        """
-        <style>
-        .alert-table { width: 100%; border-collapse: collapse; margin-top: 1em; font-size: 0.9rem; }
-        .alert-table th, .alert-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ccc; }
-        .badge { display: inline-block; padding: 3px 8px; border-radius: 8px; color: white; font-size: 0.8rem; font-weight: bold; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     rows = []
     for _, row in df.iterrows():
@@ -164,7 +136,7 @@ def _render_alert_table(df: pd.DataFrame) -> None:
 
         alert_type = str(row.get(Fields.ALERT_TYPE, AlertType.NONE.value)).lower()
         bg_color, badge_color = alert_colors.get(alert_type, alert_colors[AlertType.NONE.value])
-        badge = f"<span class='badge' style='background-color: {badge_color}'>{alert_type.title()}</span>"
+        badge = f"<span style='display:inline-block;padding:2px 10px;border-radius:999px;font-family:monospace;font-size:0.8rem;background-color:{badge_color};color:white;'>{alert_type.title()}</span>"
 
         rows.append(
             f"<tr style=\"background-color: {bg_color};\">"
@@ -175,8 +147,10 @@ def _render_alert_table(df: pd.DataFrame) -> None:
         )
 
     table_html = (
-        "<table class='alert-table'>"
-        "<thead><tr><th>Alert Time</th><th>Message</th><th>Alert Type</th></tr></thead>"
+        "<table class='alert-table' style='width:100%;border-collapse:collapse;margin-top:0.5rem;'>"
+        "<thead><tr><th style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>Alert Time</th>"
+        "<th style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>Message</th>"
+        "<th style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>Alert Type</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
     )

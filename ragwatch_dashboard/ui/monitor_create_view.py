@@ -7,15 +7,14 @@ from controller.dashboard_controller import DashboardController
 
 
 def _open_success_dialog(controller: DashboardController, name, ip, port, interval, monitoring_modules):
-    @st.dialog("Success")
+    @st.dialog("Monitor created")
     def _dialog():
-        st.write(f"Monitor :blue-background[**\"{name}\"**] will appear in the sidebar.")
-        st.write(f"Server address: :blue-background[**{ip}:{port}**]")
-        st.write(f"Monitoring interval: :blue-background[**{interval}**] minutes.")
-        st.write("")
+        st.success(f"{name} is now registered.")
+        st.write(f"Endpoint: {ip}:{port}")
+        st.write(f"Interval: every {interval} minutes")
+        st.write(f"Modules: {monitoring_modules}")
 
-        _, middle, _ = st.columns(3)
-        if middle.button(":green[**OK**]", use_container_width=True, type="tertiary"):
+        if st.button("Back to dashboard", use_container_width=True, type="primary"):
             controller.add_monitor(name, ip, port, interval, monitoring_modules)
             st.rerun()
 
@@ -23,17 +22,20 @@ def _open_success_dialog(controller: DashboardController, name, ip, port, interv
 
 
 def render_monitor_create_form(controller: DashboardController) -> None:
-    st.header("Add Monitor")
+    st.header("Add monitor")
+    st.caption("Provide the endpoint details so we can track KPIs and alerts for it.")
 
     with st.form(key="form_monitor_create"):
-        name = st.text_input("Monitor Name")
-        interval = st.number_input("Monitoring Interval (minutes)", min_value=1, max_value=60, value=5)
-        ip = st.text_input("Server IP Address")
-        port = st.text_input("Port Number")
+        left, right = st.columns(2)
+        name = left.text_input("Monitor Name", placeholder="Production QA")
+        interval = right.number_input("Monitoring Interval (minutes)", min_value=1, max_value=60, value=5)
+
+        ip = left.text_input("Server IP Address", placeholder="10.0.12.34")
+        port = right.text_input("Port Number", placeholder="8080")
+
         monitoring_modules = st.selectbox("Modules to Monitor", ["Retriever", "Generator", "Both"])
 
-        _, _, right = st.columns(3)
-        submit_button = right.form_submit_button("Create Monitor", use_container_width=True)
+        submit_button = st.form_submit_button("Create monitor", use_container_width=True)
 
         if submit_button:
             if not all([name, interval, ip, port, monitoring_modules]):
