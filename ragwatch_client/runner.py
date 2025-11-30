@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional
 from ragwatch import RAGMonitor
 from ragwatch.logging import ConsoleStepLogger
 
-from .factory import DatasetClient, DatasetResources
+from .factory import DatasetClient, RAGRuntimeResources
 
 @dataclass(slots=True)
 class DatasetRunConfig:
@@ -45,7 +45,7 @@ class PreparedContext:
             version,
         )
 
-        resources: DatasetResources = dataset.prepare_resources()
+        resources: RAGRuntimeResources = dataset.prepare_resources()
         metadata = resources.metadata or {}
 
         if metadata.get("doc_count") is not None:

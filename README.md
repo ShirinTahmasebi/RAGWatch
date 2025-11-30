@@ -126,7 +126,7 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 - **Data-only class**: `HotpotQADataSource` implements the `CorpusDataset` protocol so it only concerns itself with `load_questions()` and `build_document_corpus()` (still powered by `ragwatch_client.datasets.hotpotqa.data`).
 - **Vectorstore adapter**: `ragwatch_client.vectorstores.faiss.FaissVectorStoreAdapter` encapsulates FAISS builds/loads using the shared `RAGWATCH_INDEX_DIR`, and supports dependency-injected embeddings/paths for tests.
 - **RAG pipeline**: `ragwatch_client.pipelines.basic.BasicRAGPipelineBuilder` wires any retriever into a LangChain prompt + `ChatOpenAI(model="gpt-4o-mini", temperature=0.1)` call.
-- **Factory wiring** (`ragwatch_client.factory`): `build_hotpotqa_dataset()` lives alongside `build_vectorstore_dataset(...)`, so all wiring of corpus/vectorstore/pipeline pieces happens outside the dataset module. Swapping adapters or prompts is now an exercise in editing the factory combo only.
+- **Factory wiring** (`ragwatch_client.factory`): `build_hotpotqa_dataset()` now lives in the factory registry and is built via `RAGDatasetBuilder`, so all wiring of corpus/vectorstore/pipeline pieces happens outside the dataset module. Swapping adapters or prompts is an exercise in editing that builder recipe.
 - **Generic runner & CLI**: `ragwatch_client.runner` remains dataset-agnostic while the Typer CLI instantiates the builder registered under `ragwatch_client.factory.DATASETS`.
 
 ### Adding another dataset quickly
@@ -134,7 +134,7 @@ python -m unittest tests.test_schema tests.test_writers tests.test_logger tests.
 1. Create `ragwatch_client/datasets/<name>/` and implement a `CorpusDataset`-compatible data source (usually a small class that calls into your `data.py`). No vectorstore/pipeline code should live here.
 2. Choose a vectorstore adapter (`FaissVectorStoreAdapter` or your own subclass of `VectorStoreAdapter`).
 3. Pick or implement a `RAGPipelineBuilder` (e.g., `BasicRAGPipelineBuilder`).
-4. In `ragwatch_client/factory/__init__.py` (or a helper it imports), wire those pieces together via `build_vectorstore_dataset(...)`, producing a `DatasetClient` builder for your dataset.
+4. In `ragwatch_client/factory/registry.py` (or a helper it imports), use `RAGDatasetBuilder` to compose your corpus/vectorstore/pipeline combo and expose a `build_<name>_dataset()` function that returns a `DatasetClient`.
 5. Register the builder in `ragwatch_client/factory.DATASETS` so the CLI can discover it.
 6. Add env entries (log/index dirs, split/sample overrides) to `.env.template` as needed.
 
@@ -146,7 +146,7 @@ The dataset itself stays cleanly focused on documents/questions, while the vecto
 from ragwatch_client.factory import build_hotpotqa_dataset
 
 dataset = build_hotpotqa_dataset()
-resources = dataset.prepare_resources()
+resources = dataset.prepare_resources()  # returns RAGRuntimeResources
 answer = resources.rag_chain.invoke("Who is Barack Obama?")
 print(answer)
 ```
