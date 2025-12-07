@@ -7,6 +7,9 @@ class EnvKeys:
 
     LOG_DIR = "RAGWATCH_LOG_DIR"
     INDEX_DIR = "RAGWATCH_INDEX_DIR"
+    MONITOR_DIR = "RAGWATCH_MONITOR_DIR"
+    KPI_DIR = "RAGWATCH_KPI_DIR"
+    ALERT_DIR = "RAGWATCH_ALERT_DIR"
     HOTPOTQA_SPLIT = "RAGWATCH_HOTPOTQA_SPLIT"
     HOTPOTQA_SAMPLE_SIZE = "RAGWATCH_HOTPOTQA_SAMPLE_SIZE"
     HOTPOTQA_USE_DUMMY_DATA = "RAGWATCH_HOTPOTQA_USE_DUMMY_DATA"
@@ -17,6 +20,9 @@ class EnvKeys:
         return {
             cls.LOG_DIR,
             cls.INDEX_DIR,
+            cls.MONITOR_DIR,
+            cls.KPI_DIR,
+            cls.ALERT_DIR,
             cls.HOTPOTQA_SPLIT,
             cls.HOTPOTQA_SAMPLE_SIZE,
             cls.HOTPOTQA_USE_DUMMY_DATA,

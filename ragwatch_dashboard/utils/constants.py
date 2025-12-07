@@ -1,11 +1,13 @@
 """Streamlit dashboard constants that remain UI-specific."""
 from __future__ import annotations
 
+from ragwatch.utils import resolve_alert_dir, resolve_kpi_dir, resolve_monitor_csv
+
 
 class Paths:
-    CSV_MONITOR = "data/monitors.csv"
-    CSV_KPIS = "logs/kpis/"
-    CSV_ALERTS = "logs/alerts/"
+    CSV_MONITOR = resolve_monitor_csv()
+    CSV_KPIS = resolve_kpi_dir()
+    CSV_ALERTS = resolve_alert_dir()
 
 
 class Fields:
@@ -17,6 +19,8 @@ class Fields:
     PORT = "port"
     INTERNAL = "interval"
     MONITORING_MODULES = "monitoring_modules"
+    LOG_DIR = "log_dir"
+    USE_LOCALHOST = "use_localhost"
     ALERT_TYPE = "alert_type"
     MESSAGE = "message"
     START_TIME = "start_time"

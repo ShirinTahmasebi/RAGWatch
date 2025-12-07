@@ -19,6 +19,8 @@ class Monitor:
     port: str
     interval: int
     modules: str
+    log_dir: str
+    use_localhost: bool
 
 
 class MonitorRepository:
@@ -32,11 +34,21 @@ class MonitorRepository:
         if not self.monitor_csv.exists():
             return {}
         df = pd.read_csv(self.monitor_csv)
+        df = self._ensure_extended_columns(df)
         if df.empty:
             return {}
         return df.set_index(Fields.MONITOR_ID).to_dict(orient="index")
 
-    def add_monitor(self, name: str, ip: str, port: str, interval: int, monitoring_modules: str) -> Monitor:
+    def add_monitor(
+        self,
+        name: str,
+        ip: str,
+        port: str,
+        interval: int,
+        monitoring_modules: str,
+        log_dir: str,
+        use_localhost: bool,
+    ) -> Monitor:
         new_monitor = Monitor(
             monitor_id=f"{time.time()}-{name}",
             name=name,
@@ -44,6 +56,8 @@ class MonitorRepository:
             port=str(port),
             interval=int(interval),
             modules=monitoring_modules,
+            log_dir=log_dir,
+            use_localhost=use_localhost,
         )
 
         new_row = {
@@ -53,16 +67,27 @@ class MonitorRepository:
             Fields.PORT: new_monitor.port,
             Fields.INTERNAL: new_monitor.interval,
             Fields.MONITORING_MODULES: new_monitor.modules,
+            Fields.LOG_DIR: new_monitor.log_dir,
+            Fields.USE_LOCALHOST: new_monitor.use_localhost,
         }
 
         if self.monitor_csv.exists():
             df = pd.read_csv(self.monitor_csv)
+            df = self._ensure_extended_columns(df)
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         else:
             df = pd.DataFrame([new_row])
 
         df.to_csv(self.monitor_csv, index=False)
         return new_monitor
+
+    @staticmethod
+    def _ensure_extended_columns(df: pd.DataFrame) -> pd.DataFrame:
+        if Fields.LOG_DIR not in df.columns:
+            df[Fields.LOG_DIR] = ""
+        if Fields.USE_LOCALHOST not in df.columns:
+            df[Fields.USE_LOCALHOST] = True
+        return df
 
 
 class KPIRepository:

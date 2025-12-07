@@ -66,3 +66,43 @@ def resolve_log_dir(
 
     ensure_env_vars(EnvKeys.LOG_DIR)
     return env_str(EnvKeys.LOG_DIR)
+
+
+def _resolve_directory(env_var: str, default: str) -> Path:
+    path = Path(os.getenv(env_var, default)).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def resolve_monitor_csv(*, override: Optional[str] = None, filename: str = "monitors.csv") -> str:
+    """Resolve the monitors CSV path, creating parent directories as needed."""
+
+    if override:
+        path = Path(override).expanduser()
+    else:
+        base_dir = _resolve_directory(EnvKeys.MONITOR_DIR, "data")
+        path = base_dir / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
+def resolve_kpi_dir(*, override: Optional[str] = None) -> str:
+    """Resolve the directory where KPI CSVs should be written."""
+
+    if override:
+        path = Path(override).expanduser()
+    else:
+        path = _resolve_directory(EnvKeys.KPI_DIR, "logs/kpis")
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
+def resolve_alert_dir(*, override: Optional[str] = None) -> str:
+    """Resolve the directory where alert CSVs should be written."""
+
+    if override:
+        path = Path(override).expanduser()
+    else:
+        path = _resolve_directory(EnvKeys.ALERT_DIR, "logs/alerts")
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)

@@ -1,7 +1,9 @@
 """Controller layer for Streamlit dashboard events."""
 from __future__ import annotations
 
-from typing import Dict, Optional
+import os
+from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 import streamlit as st
 
@@ -78,11 +80,62 @@ class DashboardController:
     # ------------------------------------------------------------------
     # Mutations
     # ------------------------------------------------------------------
-    def add_monitor(self, name: str, ip: str, port: str, interval: int, modules: str) -> None:
-        self.monitor_repo.add_monitor(name, ip, port, interval, modules)
+    def add_monitor(
+        self,
+        name: str,
+        ip: str,
+        port: str,
+        interval: int,
+        modules: str,
+        log_dir: str,
+        use_localhost: bool,
+    ) -> None:
+        resolved_path = str(Path(log_dir).expanduser())
+        self.monitor_repo.add_monitor(name, ip, port, interval, modules, resolved_path, use_localhost)
         # Force reload next time to pick up the new entry
         self.state[States.MONITOR_LOADED] = False
         self.go_home()
+
+    # ------------------------------------------------------------------
+    # Validation helpers
+    # ------------------------------------------------------------------
+    def verify_log_path(self, path_value: str) -> Tuple[bool, str, str]:
+        """Check whether the provided log path is readable.
+
+        Returns (is_valid, message, resolved_path).
+        """
+
+        if not path_value:
+            return False, "Please select a log directory or file.", ""
+
+        candidate = Path(path_value).expanduser()
+        resolved = str(candidate)
+
+        if not candidate.exists():
+            return False, f"Path '{resolved}' does not exist.", resolved
+
+        if not os.access(candidate, os.R_OK):
+            return False, f"Missing read permissions for '{resolved}'.", resolved
+
+        if candidate.is_file():
+            try:
+                with candidate.open("rb") as handle:
+                    handle.read(1)
+            except OSError as exc:
+                return False, f"Unable to read file: {exc}", resolved
+            return True, f"File '{candidate.name}' is readable.", resolved
+
+        # Directory case
+        try:
+            entries = list(candidate.iterdir())
+        except OSError as exc:
+            return False, f"Unable to list directory: {exc}", resolved
+
+        jsonl_files = [entry for entry in entries if entry.suffix == ".jsonl"]
+        if jsonl_files:
+            example = jsonl_files[0].name
+            return True, f"Directory readable (found sample log '{example}').", resolved
+        return True, "Directory is readable (no .jsonl files detected yet).", resolved
 
 
 def get_controller() -> DashboardController:
