@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+        
         {
             "name": "HotpotQA Stream (debug)",
             "type": "debugpy",
@@ -15,6 +16,17 @@
                 "--max-iterations",
                 "10"
             ],
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        },
+        {
+            "name": "KPI Job Runner",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ragwatch.analytics.kpi_job_runner",
+            "console": "integratedTerminal",
+            "justMyCode": true,
             "env": {
                 "PYTHONUNBUFFERED": "1"
             }

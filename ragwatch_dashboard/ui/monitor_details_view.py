@@ -1,6 +1,7 @@
 """UI for displaying monitor details (View layer)."""
 from __future__ import annotations
 
+import html
 from datetime import datetime
 from typing import List, Tuple
 
@@ -28,9 +29,12 @@ def render_monitor_details(controller: DashboardController) -> None:
         on_click=controller.go_home,
     )
 
+    log_dir = monitor.get(Fields.LOG_DIR) or "—"
+    log_dir_display = html.escape(str(log_dir))
     st.header(monitor.get(Fields.NAME, "Monitor"))
-    st.caption(f"{monitor.get(Fields.IP, '-')}: {monitor.get(Fields.PORT, '-')} • every {monitor.get(Fields.INTERNAL, '-') } minutes")
+    st.caption(f"{monitor.get(Fields.IP, '-')}: {monitor.get(Fields.PORT, '-')} • every {monitor.get(Fields.INTERNAL, '-') } minutes • {log_dir_display}")
 
+        
     _render_static_details(monitor)
 
     kpi_tab, alerts_tab = st.tabs(["KPI trends", "Alerts"])

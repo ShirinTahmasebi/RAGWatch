@@ -12,12 +12,14 @@ from .retrieved_doc import RetrievedDoc
 class RAGRunRecord(BaseModel):
     """End-to-end record for a single monitored RAG run."""
 
+    model_config = {"populate_by_name": True}
+
     run_id: str
     session_id: str
     timestamp: dt.datetime
 
     dataset_name: str
-    version: str
+    version: str = Field(alias="pipeline_name")
 
     question: str
     answer: str

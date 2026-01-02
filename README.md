@@ -64,6 +64,9 @@ Copy `.env.template` to `.env` and fill in the required values:
 - `OPENAI_API_KEY`: passed to LangChain’s OpenAI clients.
 - `RAGWATCH_LOG_DIR`: base directory for JSONL logs (e.g., `logs`).
 - `RAGWATCH_INDEX_DIR`: base directory where dataset vectorstores are stored (each dataset writes to its own subfolder).
+- `RAGWATCH_MONITOR_DIR`: folder where the dashboard stores `monitors.csv`.
+- `RAGWATCH_KPI_DIR`: folder where KPI CSVs are stored per monitor (e.g., `logs/kpis`).
+- `RAGWATCH_ALERT_DIR`: folder where alert CSVs are stored (e.g., `logs/alerts`).
 - `RAGWATCH_VERSION`: semantic/version label recorded with every run (e.g., `v1`).
 - `RAGWATCH_HOTPOTQA_SPLIT`: HotpotQA split to load via Hugging Face (default `validation`).
 - `RAGWATCH_HOTPOTQA_SAMPLE_SIZE`: Number of rows/docs to sample from the split when building the corpus (default `25`).
@@ -165,7 +168,46 @@ For continuous monitoring, run:
 python -m ragwatch_client hotpotqa stream --interval 1.0 --max-iterations 10
 ```
 
+## Local monitoring stack
+
+Everything can run on a single machine with a shared filesystem—no Prometheus, object storage, or remote services required. The pieces communicate through the directories resolved by `env_manager`:
+
+1. **Logger / data producer** – run any workload that emits JSONL logs (for example `python -m ragwatch_client hotpotqa stream`). Each run writes to `RAGWATCH_LOG_DIR/<dataset>/<dataset>_<version>.jsonl`.
+2. **KPI generator** – run the core job manager to fan out one job per monitor: `python -m ragwatch.analytics.kpi_job_runner`. It reads `monitors.csv`, loads each monitor's JSONL log, and appends calculated KPI rows to `RAGWATCH_KPI_DIR/monitor_<id>.csv` using the configured intervals.
+3. **Alert detector** – `ragwatch_data_generation/mock_monitoring_data/alerting.py` analyses the KPI CSVs and emits alert rows under `RAGWATCH_ALERT_DIR/alert_<id>.csv`.
+4. **Dashboard** – `streamlit run ragwatch_dashboard/main.py` reads the same CSVs via the repositories in `ragwatch_dashboard/model/repositories.py` and renders KPIs/alerts.
+
+Typical local workflow:
+
+```bash
+# 1) Log some RAG runs
+python -m ragwatch_client hotpotqa stream --interval 1.0 --max-iterations 10
+
+# 2) Simulate KPIs (replace with your actual job if needed)
+python ragwatch_data_generation/mock_monitoring_data/monitoring_mock_data.py
+
+# 3) Detect alerts (in another terminal)
+python ragwatch_data_generation/mock_monitoring_data/alerting.py
+
+# 4) Launch the dashboard
+streamlit run ragwatch_dashboard/main.py
+```
+
+Each process can be stopped/restarted independently because the CSV/JSONL files act as the shared contract between them.
+
 This repeatedly samples questions (cycling through the dummy set for now), waits the requested interval between calls, and logs each result so you can watch performance trends over time.
+
+### Automated KPI jobs
+
+The new `ragwatch.analytics.kpi_job_runner` module reads the shared `monitors.csv` registry, spawns a lightweight job per monitor, and writes KPI snapshots to `RAGWATCH_KPI_DIR`. Each job:
+
+- Resolves the monitor's log file (or directory of JSONL files).
+- Buckets historical runs into interval-aligned windows, backfilling KPI rows for every completed window before switching to realtime polling.
+- Filters runs that fall within each window and feeds only those records into the per-KPI functions.
+- Calls the placeholder functions in `ragwatch/analytics/kpi_calculations.py` for every KPI defined in `KPI_CONFIGS`.
+- Appends a row to `monitor_<id>.csv` with the computed values plus metadata (timestamp, monitor id/name, modules, log source).
+
+All calculation functions currently raise `NotImplementedError`, but they already receive the filtered runs for the window, the originating monitor metadata, and the interval metadata so you can flesh them out incrementally. Customize or extend the job runner by instantiating `KPIComputationService` directly, overriding the calculation registry, or adjusting the poll interval if you need faster refresh cycles.
 
 ## Next steps
 - Replace the placeholder HotpotQA loaders with real data ingestion + chunking.

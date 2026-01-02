@@ -1,5 +1,6 @@
 """Analytics helpers shared across the RAGWatch ecosystem."""
 
+from .kpi_job_runner import KPIComputationService, KPICalculator, MonitorKPIJob
 from .kpis import (
     ALERT_HISTORY_WINDOW,
     DEFAULT_ALERT_STD_THRESHOLD,
@@ -12,6 +13,9 @@ from .kpis import (
 )
 
 __all__ = [
+    "KPIComputationService",
+    "KPICalculator",
+    "MonitorKPIJob",
     "KPIConfig",
     "KPIGroup",
     "KPI_CONFIGS",

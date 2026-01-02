@@ -97,8 +97,14 @@ class KPIRepository:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _sanitize_id(monitor_id: str) -> str:
+        """Sanitize monitor ID for filesystem use (same logic as KPI job runner)."""
+        return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in monitor_id)
+
     def load_for_monitor(self, monitor_id: str) -> pd.DataFrame:
-        file_path = self.base_dir / f"monitor_{monitor_id}.csv"
+        sanitized_id = self._sanitize_id(monitor_id)
+        file_path = self.base_dir / f"monitor_{sanitized_id}.csv"
         if not file_path.exists():
             return pd.DataFrame()
         try:
@@ -114,8 +120,14 @@ class AlertRepository:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _sanitize_id(monitor_id: str) -> str:
+        """Sanitize monitor ID for filesystem use (same logic as KPI job runner)."""
+        return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in monitor_id)
+
     def load_for_monitor(self, monitor_id: str) -> pd.DataFrame:
-        file_path = self.base_dir / f"alert_{monitor_id}.csv"
+        sanitized_id = self._sanitize_id(monitor_id)
+        file_path = self.base_dir / f"alert_{sanitized_id}.csv"
         if not file_path.exists():
             return pd.DataFrame()
         try:

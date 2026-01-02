@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime
 
-from utils.constants import Paths, Kpis, KpiCategoriesAllignment, Fields
+from ragwatch..constants import Paths, Kpis, KpiCategoriesAllignment, Fields
 
 monitor_list_file = Paths.CSV_MONITOR
 
