@@ -11,8 +11,9 @@ from ragwatch.experiments.schema import (
     ExperimentExampleResult,
     ExperimentResult,
 )
-from ragwatch.metrics.report import DBKPIEngine, KPIEngine
+from ragwatch.metrics.report import DBKPIEngine, KPIEngine, merge_kpi_reports
 from ragwatch.metrics.schema import KPIReport
+from ragwatch.metrics.semantic import SemanticKPIEngine
 
 
 class ExperimentRunner:
@@ -23,10 +24,12 @@ class ExperimentRunner:
         client: BaseRAGClient,
         kpi_engine: KPIEngine | None = None,
         db_kpi_engine: DBKPIEngine | None = None,
+        semantic_kpi_engine: SemanticKPIEngine | None = None,
     ) -> None:
         self._client = client
         self._kpi_engine = kpi_engine if kpi_engine is not None else KPIEngine()
         self._db_kpi_engine = db_kpi_engine
+        self._semantic_kpi_engine = semantic_kpi_engine
 
     def run(
         self,
@@ -34,6 +37,7 @@ class ExperimentRunner:
         config: ExperimentConfig,
         limit: int | None = None,
         compute_db_kpis: bool = False,
+        compute_semantic_kpis: bool = False,
     ) -> ExperimentResult:
         """Run the experiment over the given QA examples.
 
@@ -44,16 +48,27 @@ class ExperimentRunner:
                    Overrides ``config.max_examples`` if provided.
             compute_db_kpis: If True, compute a single DB KPI snapshot after
                    the runs using the configured (or a default) DBKPIEngine.
+            compute_semantic_kpis: If True, also compute semantic KPIs for each
+                   successful run and merge them into the example KPI report.
+                   Requires a ``semantic_kpi_engine`` to have been provided.
 
         Returns:
             ExperimentResult with one ExperimentExampleResult per example.
         """
+        if compute_semantic_kpis and self._semantic_kpi_engine is None:
+            raise ValueError(
+                "compute_semantic_kpis=True requires a semantic_kpi_engine to be "
+                "provided to ExperimentRunner."
+            )
+
         max_n = limit if limit is not None else config.max_examples
         examples = qa_examples[:max_n] if max_n is not None else qa_examples
 
         example_results: list[ExperimentExampleResult] = []
         for example in examples:
-            example_results.append(self._run_one(example, config))
+            example_results.append(
+                self._run_one(example, config, compute_semantic_kpis)
+            )
 
         db_kpi_report: KPIReport | None = None
         if compute_db_kpis:
@@ -72,7 +87,10 @@ class ExperimentRunner:
         )
 
     def _run_one(
-        self, example: QAExample, config: ExperimentConfig
+        self,
+        example: QAExample,
+        config: ExperimentConfig,
+        compute_semantic_kpis: bool = False,
     ) -> ExperimentExampleResult:
         """Run a single QA example, capturing any error without raising."""
         try:
@@ -83,6 +101,9 @@ class ExperimentRunner:
             run.metadata["question"] = example.question
 
             report = self._kpi_engine.compute(run)
+            if compute_semantic_kpis and self._semantic_kpi_engine is not None:
+                semantic_report = self._semantic_kpi_engine.compute(run)
+                report = merge_kpi_reports(report, semantic_report)
             return ExperimentExampleResult(
                 example_id=example.example_id,
                 question=example.question,

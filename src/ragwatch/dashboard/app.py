@@ -33,7 +33,8 @@ try:
 except Exception:  # noqa: BLE001
     _HAS_PLOTLY = False
 
-DEFAULT_COMPARISON_DIR = "outputs/comparisons/squad_retrievers"
+DEFAULT_COMPARISON_DIR = "outputs/comparisons/squad_retrievers_base"
+COMPARISONS_ROOT = "outputs/comparisons"
 
 # Non-KPI columns in combined_kpis.csv (everything else is a KPI column).
 _BASE_COLUMNS = {
@@ -62,6 +63,22 @@ def _numeric_kpi_columns(df: pd.DataFrame) -> list[str]:
     """Return numeric KPI columns (excludes base/identifier columns)."""
     numeric = df.select_dtypes(include="number").columns
     return [c for c in numeric if c not in _BASE_COLUMNS]
+
+
+def _list_comparison_dirs(root: str) -> list[str]:
+    """Return comparison subdirectories under ``root`` that have a summary CSV.
+
+    Returns an empty list if ``root`` does not exist, so the dashboard falls
+    back to a plain text input.
+    """
+    root_path = Path(root)
+    if not root_path.exists():
+        return []
+    return sorted(
+        str(p)
+        for p in root_path.iterdir()
+        if p.is_dir() and (p / "comparison_summary.csv").exists()
+    )
 
 
 def _bar_chart(df: pd.DataFrame, x: str, y: str, color: str, title: str) -> None:
@@ -295,9 +312,29 @@ def main() -> None:
     st.title("RAGWatch Research Dashboard")
 
     st.sidebar.header("Settings")
-    comparison_dir_str = st.sidebar.text_input(
-        "Comparison output directory", value=DEFAULT_COMPARISON_DIR
-    )
+
+    # Offer available comparison directories (if any) plus a custom path field.
+    available_dirs = _list_comparison_dirs(COMPARISONS_ROOT)
+    if available_dirs:
+        choices = available_dirs + ["Custom path..."]
+        default_index = (
+            choices.index(DEFAULT_COMPARISON_DIR)
+            if DEFAULT_COMPARISON_DIR in choices
+            else 0
+        )
+        selected = st.sidebar.selectbox(
+            "Comparison output directory", choices, index=default_index
+        )
+        if selected == "Custom path...":
+            comparison_dir_str = st.sidebar.text_input(
+                "Custom comparison output directory", value=DEFAULT_COMPARISON_DIR
+            )
+        else:
+            comparison_dir_str = selected
+    else:
+        comparison_dir_str = st.sidebar.text_input(
+            "Comparison output directory", value=DEFAULT_COMPARISON_DIR
+        )
     comparison_dir = Path(comparison_dir_str)
 
     try:

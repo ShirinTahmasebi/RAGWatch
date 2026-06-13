@@ -488,16 +488,54 @@ Comparing retrievers (TF-IDF vs Chroma vs Qdrant vs pgvector) and top-k settings
 
 ```bash
 pip install -e ".[datasets]"            # TF-IDF only
-pip install -e ".[datasets,vectordb]"   # also include Chroma + Qdrant
+pip install -e ".[datasets,vectordb]"   # also include Chroma + Qdrant + pgvector
 python examples/run_squad_retriever_comparison.py
 ```
 
-TF-IDF always runs; Chroma and Qdrant are included automatically when their optional dependencies are installed.
+The default comparison includes:
+
+```
+TF-IDF
+Chroma
+Qdrant
+```
+
+TF-IDF always runs; Chroma and Qdrant are included automatically when their optional dependencies are installed. **pgvector is included automatically when Postgres is configured and reachable** (via `RAGWATCH_PGVECTOR_URL`); otherwise it is skipped gracefully with a clear message and the comparison still completes with the other retrievers.
+
+To include pgvector:
+
+```bash
+cp .env.template .env
+docker compose up -d postgres
+python examples/run_squad_retriever_comparison.py
+```
+
+When pgvector is included, the dashboard and plotting outputs automatically show `pgvector` as another retriever (they read `combined_kpis.csv` and `comparison_summary.csv`), and the `pgvector_top*` experiment folders contain a non-null `db_kpis.json` DB KPI snapshot. Non-pgvector retrievers keep a null `db_kpis.json`. pgvector stays inside the same mode-specific directory; including it does not create a separate output directory.
+
+### Mode-aware output directories
+
+The comparison example chooses its output directory based on the run mode, so a base run and a semantic run never overwrite each other:
+
+| Command | Output directory |
+|---------|------------------|
+| `python examples/run_squad_retriever_comparison.py` | `outputs/comparisons/squad_retrievers_base/` |
+| `RAGWATCH_COMPUTE_SEMANTIC_KPIS=true RAGWATCH_SEMANTIC_PROVIDER=local ...` | `outputs/comparisons/squad_retrievers_semantic_local/` |
+| `RAGWATCH_COMPUTE_SEMANTIC_KPIS=true RAGWATCH_SEMANTIC_PROVIDER=openai ...` | `outputs/comparisons/squad_retrievers_semantic_openai/` |
+| `RAGWATCH_COMPUTE_SEMANTIC_KPIS=true RAGWATCH_SEMANTIC_PROVIDER=azure_openai ...` | `outputs/comparisons/squad_retrievers_semantic_azure_openai/` |
+
+The `comparison_name` inside the exported CSV/JSON matches the directory (for example `squad_retrievers_semantic_local`). If semantic KPIs are requested but provider setup fails, the run falls back to the base directory because no semantic columns are present.
+
+Set `RAGWATCH_COMPARISON_OUTPUT_DIR` to use a custom output directory verbatim:
+
+```bash
+RAGWATCH_COMPARISON_OUTPUT_DIR=outputs/comparisons/custom_test \
+python examples/run_squad_retriever_comparison.py
+```
 
 ### Output files
 
 ```
-outputs/comparisons/squad_retrievers/
+outputs/comparisons/squad_retrievers_base/
   combined_kpis.csv          # one row per successful run across all experiments
   comparison_summary.csv     # one row per retriever/top-k setting with averaged KPIs
   comparison_summary.json    # comparison metadata + per-experiment aggregates
@@ -516,8 +554,6 @@ Each per-experiment folder is written with the standard experiment exporters (`r
 - Paper plots
 - A later Streamlit dashboard
 - Later Postgres experiment storage
-
-> **Note:** pgvector is not part of the default comparison example yet (TODO: add it gracefully when `RAGWATCH_PGVECTOR_URL` is available).
 
 ## Research dashboard
 
@@ -551,7 +587,7 @@ streamlit run src/ragwatch/dashboard/app.py
 python examples/run_dashboard.py
 ```
 
-By default it reads `outputs/comparisons/squad_retrievers`; you can point it at any comparison output directory from the sidebar.
+By default it reads `outputs/comparisons/squad_retrievers_base`; if `outputs/comparisons/` contains comparison directories, the sidebar offers them in a selectbox, and you can always paste a custom path.
 
 ### Files it reads
 
@@ -586,7 +622,25 @@ python examples/run_squad_retriever_comparison.py
 python examples/generate_squad_comparison_plots.py
 ```
 
-Figures are saved to `outputs/figures/squad_retrievers/`:
+By default it reads `outputs/comparisons/squad_retrievers_base/` and saves figures to `outputs/figures/squad_retrievers_base/`. The figures directory mirrors the comparison directory name so base and semantic figures do not overwrite each other.
+
+To plot a semantic run, point it at that comparison directory:
+
+```bash
+RAGWATCH_COMPARISON_OUTPUT_DIR=outputs/comparisons/squad_retrievers_semantic_local \
+python examples/generate_squad_comparison_plots.py
+# -> writes outputs/figures/squad_retrievers_semantic_local/
+```
+
+Use `RAGWATCH_FIGURE_OUTPUT_DIR` to override the figures directory verbatim:
+
+```bash
+RAGWATCH_COMPARISON_OUTPUT_DIR=outputs/comparisons/squad_retrievers_semantic_local \
+RAGWATCH_FIGURE_OUTPUT_DIR=outputs/figures/custom_semantic \
+python examples/generate_squad_comparison_plots.py
+```
+
+Figures are saved to the resolved figures directory (default `outputs/figures/squad_retrievers_base/`):
 
 | Figure | Shows |
 |--------|-------|
@@ -599,11 +653,131 @@ Figures are saved to `outputs/figures/squad_retrievers/`:
 
 These figures are useful for papers, reports, slides, and debugging retriever behavior. If the comparison outputs are missing, the script tells you to run `python examples/run_squad_retriever_comparison.py` first.
 
+## Semantic KPI metrics
+
+RAGWatch can optionally compute **embedding-based semantic KPIs** that measure how semantically related the query, retrieved context, and generated answer are. These complement the deterministic KPIs and are a first relevance layer. LLM-as-judge faithfulness is **not** implemented yet.
+
+Semantic KPIs (category `semantic_quality`):
+
+| KPI | Measures |
+|-----|----------|
+| `query_context_similarity_mean` | Mean cosine similarity of query to each retrieved doc |
+| `query_context_similarity_max` | Max cosine similarity of query to any retrieved doc |
+| `answer_context_similarity_mean` | Mean cosine similarity of answer to each retrieved doc |
+| `answer_context_similarity_max` | Max cosine similarity of answer to any retrieved doc |
+| `answer_query_similarity` | Cosine similarity of answer to query |
+
+They are **optional** and never required by the default `KPIEngine`. They are computed by a separate `SemanticKPIEngine` that uses a configurable embedding provider.
+
+### Supported providers
+
+- **local** — sentence-transformers (no API key)
+- **openai** — direct OpenAI embeddings API
+- **azure_openai** — Azure OpenAI embeddings deployment
+
+### Install
+
+```bash
+pip install -e ".[semantic]"
+```
+
+### Local example (no API key)
+
+```bash
+RAGWATCH_SEMANTIC_PROVIDER=local
+python examples/run_toy_rag_with_semantic_kpis.py
+```
+
+### Direct OpenAI example
+
+```bash
+RAGWATCH_SEMANTIC_PROVIDER=openai
+RAGWATCH_OPENAI_API_KEY=...
+RAGWATCH_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+python examples/run_toy_rag_with_semantic_kpis.py
+```
+
+### Azure OpenAI example
+
+```bash
+RAGWATCH_SEMANTIC_PROVIDER=azure_openai
+RAGWATCH_AZURE_OPENAI_API_KEY=...
+RAGWATCH_AZURE_OPENAI_ENDPOINT=...
+RAGWATCH_AZURE_OPENAI_API_VERSION=2024-02-01
+RAGWATCH_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=...
+python examples/run_toy_rag_with_semantic_kpis.py
+```
+
+Note: for direct OpenAI, `RAGWATCH_OPENAI_EMBEDDING_MODEL` is a **model name**; for Azure OpenAI, `RAGWATCH_AZURE_OPENAI_EMBEDDING_DEPLOYMENT` is a **deployment name** (it is passed where OpenAI expects the model argument).
+
+### Semantic KPIs in batch and comparison experiments
+
+Semantic KPIs can now also be computed inside the batch `ExperimentRunner` and the retriever `ComparisonRunner`, not just the standalone examples. They remain **opt-in**: the default deterministic behavior is unchanged and never requires semantic dependencies or API keys.
+
+Programmatically, attach a `SemanticKPIEngine` and enable the flag:
+
+```python
+runner = ExperimentRunner(client=client, semantic_kpi_engine=SemanticKPIEngine(provider))
+result = runner.run(qa_examples, config, compute_semantic_kpis=True)
+```
+
+For comparisons, each `RetrieverExperimentSpec` can independently set `semantic_kpi_engine` and `compute_semantic_kpis=True`.
+
+In the retriever comparison example, semantic KPIs are controlled by an environment flag so the default comparison never makes paid API calls:
+
+```bash
+RAGWATCH_COMPUTE_SEMANTIC_KPIS=true
+```
+
+When enabled, semantic KPI columns (for example `query_context_similarity_mean`, `answer_context_similarity_mean`, `answer_query_similarity`) automatically appear in the exported `kpis.csv`, `kpis.jsonl`, and `combined_kpis.csv`, and their averages (`avg_query_context_similarity_mean`, `avg_answer_context_similarity_mean`, `avg_answer_query_similarity`) appear in `comparison_summary.csv`. The dashboard KPI explorer and the comparison plots pick these up automatically when present.
+
+Each semantic provider writes to its own mode-specific directory (`outputs/comparisons/squad_retrievers_semantic_local/`, `..._semantic_openai/`, `..._semantic_azure_openai/`), so semantic runs never overwrite the base run or each other. See [Mode-aware output directories](#mode-aware-output-directories).
+
+**Local comparison example (no API key):**
+
+```bash
+pip install -e ".[semantic]"
+RAGWATCH_COMPUTE_SEMANTIC_KPIS=true \
+RAGWATCH_SEMANTIC_PROVIDER=local \
+python examples/run_squad_retriever_comparison.py
+```
+
+**OpenAI comparison example:**
+
+```bash
+RAGWATCH_COMPUTE_SEMANTIC_KPIS=true \
+RAGWATCH_SEMANTIC_PROVIDER=openai \
+RAGWATCH_OPENAI_API_KEY=... \
+RAGWATCH_OPENAI_EMBEDDING_MODEL=text-embedding-3-small \
+python examples/run_squad_retriever_comparison.py
+```
+
+**Azure OpenAI comparison example:**
+
+```bash
+RAGWATCH_COMPUTE_SEMANTIC_KPIS=true \
+RAGWATCH_SEMANTIC_PROVIDER=azure_openai \
+RAGWATCH_AZURE_OPENAI_API_KEY=... \
+RAGWATCH_AZURE_OPENAI_ENDPOINT=... \
+RAGWATCH_AZURE_OPENAI_API_VERSION=2024-02-01 \
+RAGWATCH_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=... \
+python examples/run_squad_retriever_comparison.py
+```
+
+OpenAI and Azure OpenAI embeddings may incur cost. Start with small datasets (lower `max_examples`) before running larger comparisons.
+
+**Reminders:**
+
+- Do not commit `.env` (it stays gitignored); `.env.template` documents the variables.
+- Use small example sizes when using paid APIs.
+- LLM-as-judge faithfulness is not implemented yet.
+- Semantic KPIs stay optional everywhere; with the flag off, no semantic dependencies, models, or keys are required.
+
 ## What's NOT included yet (intentionally)
 
 
 - LLM-based generators or evaluators
-- Semantic faithfulness/relevance judges
+- LLM-as-judge faithfulness metrics
 - Drift detection
 - Grafana dashboards
 - MCP (Model Context Protocol) integration

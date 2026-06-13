@@ -69,6 +69,22 @@ class TestLoaders:
         assert "total_latency_ms" in df.columns
         assert df["retriever_name"].iloc[0] == "tfidf"
 
+    def test_load_combined_kpis_with_semantic_columns(
+        self, tmp_path: Path
+    ) -> None:
+        comparison_dir = tmp_path / "semantic_cmp"
+        comparison_dir.mkdir()
+        (comparison_dir / "combined_kpis.csv").write_text(
+            "comparison_name,experiment_key,retriever_name,top_k,example_id,"
+            "total_latency_ms,query_context_similarity_mean,answer_query_similarity\n"
+            "cmp,tfidf_top3,tfidf,3,ex0,1.5,0.7,0.6\n",
+            encoding="utf-8",
+        )
+        df = load_combined_kpis(comparison_dir)
+        assert "query_context_similarity_mean" in df.columns
+        assert "answer_query_similarity" in df.columns
+        assert df["answer_query_similarity"].iloc[0] == 0.6
+
     def test_load_comparison_summary(self, tmp_path: Path) -> None:
         comparison_dir = _make_comparison_dir(tmp_path)
         df = load_comparison_summary(comparison_dir)

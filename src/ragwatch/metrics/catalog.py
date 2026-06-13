@@ -7,6 +7,7 @@ from enum import StrEnum
 class KPICategory(StrEnum):
     RETRIEVAL_QUALITY = "retrieval_quality"
     GENERATION_QUALITY = "generation_quality"
+    SEMANTIC_QUALITY = "semantic_quality"
     RUNTIME = "runtime"
     DB_INDEX_STATS = "db_index_stats"
 
@@ -25,6 +26,7 @@ class KPISource(StrEnum):
     METADATA = "metadata"
     POSTGRES = "postgres"
     PGVECTOR = "pgvector"
+    SEMANTIC_EMBEDDING_MODEL = "semantic_embedding_model"
 
 
 class KPIId(StrEnum):
@@ -44,6 +46,13 @@ class KPIId(StrEnum):
     ANSWER_LENGTH_CHARS = "answer_length_chars"
     ANSWER_LENGTH_WORDS = "answer_length_words"
     ANSWER_TO_CONTEXT_LENGTH_RATIO = "answer_to_context_length_ratio"
+
+    # Semantic quality (optional, embedding-based)
+    QUERY_CONTEXT_SIMILARITY_MEAN = "query_context_similarity_mean"
+    QUERY_CONTEXT_SIMILARITY_MAX = "query_context_similarity_max"
+    ANSWER_CONTEXT_SIMILARITY_MEAN = "answer_context_similarity_mean"
+    ANSWER_CONTEXT_SIMILARITY_MAX = "answer_context_similarity_max"
+    ANSWER_QUERY_SIMILARITY = "answer_query_similarity"
 
     # Runtime
     TOTAL_LATENCY_MS = "total_latency_ms"
@@ -162,6 +171,42 @@ KPI_CATALOG: dict[KPIId, KPIDefinition] = {
         stage=KPIStage.GENERATION,
         source=KPISource.GENERATION,
         description="Answer character length divided by total retrieved context character length.",
+    ),
+    # --- Semantic quality (optional, embedding-based) ---
+    KPIId.QUERY_CONTEXT_SIMILARITY_MEAN: KPIDefinition(
+        id=KPIId.QUERY_CONTEXT_SIMILARITY_MEAN,
+        category=KPICategory.SEMANTIC_QUALITY,
+        stage=KPIStage.RETRIEVAL,
+        source=KPISource.SEMANTIC_EMBEDDING_MODEL,
+        description="Mean cosine similarity between the query and each retrieved document.",
+    ),
+    KPIId.QUERY_CONTEXT_SIMILARITY_MAX: KPIDefinition(
+        id=KPIId.QUERY_CONTEXT_SIMILARITY_MAX,
+        category=KPICategory.SEMANTIC_QUALITY,
+        stage=KPIStage.RETRIEVAL,
+        source=KPISource.SEMANTIC_EMBEDDING_MODEL,
+        description="Maximum cosine similarity between the query and any retrieved document.",
+    ),
+    KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN: KPIDefinition(
+        id=KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN,
+        category=KPICategory.SEMANTIC_QUALITY,
+        stage=KPIStage.GENERATION,
+        source=KPISource.SEMANTIC_EMBEDDING_MODEL,
+        description="Mean cosine similarity between the generated answer and each retrieved document.",
+    ),
+    KPIId.ANSWER_CONTEXT_SIMILARITY_MAX: KPIDefinition(
+        id=KPIId.ANSWER_CONTEXT_SIMILARITY_MAX,
+        category=KPICategory.SEMANTIC_QUALITY,
+        stage=KPIStage.GENERATION,
+        source=KPISource.SEMANTIC_EMBEDDING_MODEL,
+        description="Maximum cosine similarity between the generated answer and any retrieved document.",
+    ),
+    KPIId.ANSWER_QUERY_SIMILARITY: KPIDefinition(
+        id=KPIId.ANSWER_QUERY_SIMILARITY,
+        category=KPICategory.SEMANTIC_QUALITY,
+        stage=KPIStage.END_TO_END,
+        source=KPISource.SEMANTIC_EMBEDDING_MODEL,
+        description="Cosine similarity between the generated answer and the query.",
     ),
     # --- Runtime ---
     KPIId.TOTAL_LATENCY_MS: KPIDefinition(

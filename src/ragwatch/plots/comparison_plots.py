@@ -35,6 +35,15 @@ COL_AVG_RETRIEVAL_SCORE_MEAN = f"{AVG_PREFIX}{KPIId.RETRIEVAL_SCORE_MEAN}"
 COL_AVG_RETRIEVAL_REDUNDANCY = f"{AVG_PREFIX}{KPIId.RETRIEVAL_REDUNDANCY}"
 COL_AVG_ANSWER_LENGTH_WORDS = f"{AVG_PREFIX}{KPIId.ANSWER_LENGTH_WORDS}"
 
+# Optional semantic KPI columns (only present when semantic KPIs were enabled).
+COL_AVG_QUERY_CONTEXT_SIMILARITY_MEAN = (
+    f"{AVG_PREFIX}{KPIId.QUERY_CONTEXT_SIMILARITY_MEAN}"
+)
+COL_AVG_ANSWER_CONTEXT_SIMILARITY_MEAN = (
+    f"{AVG_PREFIX}{KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN}"
+)
+COL_AVG_ANSWER_QUERY_SIMILARITY = f"{AVG_PREFIX}{KPIId.ANSWER_QUERY_SIMILARITY}"
+
 # Columns used to label/group experiment settings in the summary table.
 EXPERIMENT_KEY_COLUMN = "experiment_key"
 RETRIEVER_NAME_COLUMN = "retriever_name"
@@ -62,6 +71,11 @@ def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:
             f"Missing required column(s) {missing}; available columns: "
             f"{list(df.columns)}"
         )
+
+
+def _has_plottable_column(df: pd.DataFrame, column: str) -> bool:
+    """Return True if ``column`` exists and has at least one non-null value."""
+    return column in df.columns and df[column].notna().any()
 
 
 def _save_figure(fig: "plt.Figure", output_path: str | Path) -> None:
@@ -151,6 +165,45 @@ def plot_answer_length_by_retriever(
     )
 
 
+def plot_query_context_similarity_by_retriever(
+    summary_df: pd.DataFrame, output_path: str | Path
+) -> None:
+    """Bar chart of average query-context semantic similarity per setting."""
+    _bar_by_experiment(
+        summary_df,
+        value_column=COL_AVG_QUERY_CONTEXT_SIMILARITY_MEAN,
+        title="Average query-context similarity by retriever",
+        ylabel="Avg query-context similarity (mean)",
+        output_path=output_path,
+    )
+
+
+def plot_answer_context_similarity_by_retriever(
+    summary_df: pd.DataFrame, output_path: str | Path
+) -> None:
+    """Bar chart of average answer-context semantic similarity per setting."""
+    _bar_by_experiment(
+        summary_df,
+        value_column=COL_AVG_ANSWER_CONTEXT_SIMILARITY_MEAN,
+        title="Average answer-context similarity by retriever",
+        ylabel="Avg answer-context similarity (mean)",
+        output_path=output_path,
+    )
+
+
+def plot_answer_query_similarity_by_retriever(
+    summary_df: pd.DataFrame, output_path: str | Path
+) -> None:
+    """Bar chart of average answer-query semantic similarity per setting."""
+    _bar_by_experiment(
+        summary_df,
+        value_column=COL_AVG_ANSWER_QUERY_SIMILARITY,
+        title="Average answer-query similarity by retriever",
+        ylabel="Avg answer-query similarity",
+        output_path=output_path,
+    )
+
+
 def plot_top_k_sensitivity(
     summary_df: pd.DataFrame, metric: str, output_path: str | Path
 ) -> None:
@@ -216,5 +269,29 @@ def generate_all_comparison_plots(
         summary_df, COL_AVG_RETRIEVAL_SCORE_MEAN, top_k_score_path
     )
     created.append(top_k_score_path)
+
+    # --- Optional semantic plots (only when semantic columns have data) ---
+    semantic_plots = [
+        (
+            COL_AVG_QUERY_CONTEXT_SIMILARITY_MEAN,
+            "query_context_similarity_by_retriever.png",
+            plot_query_context_similarity_by_retriever,
+        ),
+        (
+            COL_AVG_ANSWER_CONTEXT_SIMILARITY_MEAN,
+            "answer_context_similarity_by_retriever.png",
+            plot_answer_context_similarity_by_retriever,
+        ),
+        (
+            COL_AVG_ANSWER_QUERY_SIMILARITY,
+            "answer_query_similarity_by_retriever.png",
+            plot_answer_query_similarity_by_retriever,
+        ),
+    ]
+    for column, filename, plot_func in semantic_plots:
+        if _has_plottable_column(summary_df, column):
+            path = output_dir / filename
+            plot_func(summary_df, path)
+            created.append(path)
 
     return created

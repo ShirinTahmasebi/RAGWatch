@@ -20,10 +20,13 @@ from ragwatch.experiments.exporters import export_experiment
 from ragwatch.experiments.runner import ExperimentRunner
 from ragwatch.experiments.schema import ExperimentConfig, ExperimentResult
 from ragwatch.metrics.catalog import KPIId
-from ragwatch.metrics.report import KPIEngine, to_flat_dict
+from ragwatch.metrics.report import DBKPIEngine, KPIEngine, to_flat_dict
+from ragwatch.metrics.semantic import SemanticKPIEngine
 
 # Summary metrics averaged per experiment setting. These reference the central
-# KPI catalog so KPI names are not hardcoded as raw strings.
+# KPI catalog so KPI names are not hardcoded as raw strings. The trailing
+# semantic KPIs are only populated when semantic KPIs are enabled for a spec;
+# otherwise their averaged columns are simply empty.
 SUMMARY_METRIC_IDS: list[KPIId] = [
     KPIId.TOTAL_LATENCY_MS,
     KPIId.RETRIEVAL_LATENCY_MS,
@@ -31,6 +34,9 @@ SUMMARY_METRIC_IDS: list[KPIId] = [
     KPIId.RETRIEVAL_SCORE_MEAN,
     KPIId.RETRIEVAL_REDUNDANCY,
     KPIId.ANSWER_LENGTH_WORDS,
+    KPIId.QUERY_CONTEXT_SIMILARITY_MEAN,
+    KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN,
+    KPIId.ANSWER_QUERY_SIMILARITY,
 ]
 
 
@@ -47,13 +53,26 @@ class ComparisonConfig:
 
 @dataclass
 class RetrieverExperimentSpec:
-    """A single retriever backend to include in a comparison."""
+    """A single retriever backend to include in a comparison.
+
+    ``db_kpi_engine`` and ``compute_db_kpis`` are optional and default to
+    disabling DB KPIs, so existing callers remain unaffected. They allow a
+    backend such as pgvector to capture one DB KPI snapshot per setting.
+
+    ``semantic_kpi_engine`` and ``compute_semantic_kpis`` are also optional and
+    default to disabling semantic KPIs. Each spec can independently decide
+    whether to compute embedding-based semantic KPIs.
+    """
 
     name: str
     client: BaseRAGClient
     retriever_name: str
     generator_name: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    db_kpi_engine: DBKPIEngine | None = None
+    compute_db_kpis: bool = False
+    semantic_kpi_engine: SemanticKPIEngine | None = None
+    compute_semantic_kpis: bool = False
 
 
 @dataclass
@@ -135,12 +154,17 @@ class ComparisonRunner:
 
         try:
             runner = ExperimentRunner(
-                client=spec.client, kpi_engine=self._kpi_engine
+                client=spec.client,
+                kpi_engine=self._kpi_engine,
+                db_kpi_engine=spec.db_kpi_engine,
+                semantic_kpi_engine=spec.semantic_kpi_engine,
             )
             return runner.run(
                 qa_examples=qa_examples,
                 config=experiment_config,
                 limit=config.max_examples,
+                compute_db_kpis=spec.compute_db_kpis,
+                compute_semantic_kpis=spec.compute_semantic_kpis,
             )
         except Exception as exc:  # noqa: BLE001 - record and continue
             return ExperimentResult(

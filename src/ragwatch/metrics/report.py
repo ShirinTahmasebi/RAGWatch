@@ -72,6 +72,31 @@ def to_flat_dict(report: KPIReport) -> dict[str, Any]:
     return flat
 
 
+def merge_kpi_reports(*reports: KPIReport) -> KPIReport:
+    """Merge multiple KPIReports into one, concatenating their results.
+
+    The merged report uses the ``run_id`` and ``query`` of the first report and
+    combines all metadata. This is useful for combining deterministic and
+    semantic KPI reports for the same run.
+    """
+    if not reports:
+        raise ValueError("merge_kpi_reports requires at least one report.")
+
+    results: list[KPIResult] = []
+    metadata: dict[str, Any] = {}
+    for report in reports:
+        results.extend(report.results)
+        metadata.update(report.metadata)
+
+    return KPIReport(
+        run_id=reports[0].run_id,
+        query=reports[0].query,
+        results=results,
+        metadata=metadata,
+    )
+
+
+
 class DBKPIEngine:
     """Compute database-level KPIs from pgvector/Postgres tables."""
 

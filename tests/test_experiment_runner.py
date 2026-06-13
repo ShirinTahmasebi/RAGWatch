@@ -10,7 +10,10 @@ from ragwatch.core.schema import (
 )
 from ragwatch.experiments.runner import ExperimentRunner
 from ragwatch.experiments.schema import ExperimentConfig
+from ragwatch.metrics.catalog import KPIId
 from ragwatch.metrics.schema import KPIReport, KPIResult
+from ragwatch.metrics.semantic import SemanticKPIEngine
+from ragwatch.semantic.providers import BaseSemanticEmbeddingProvider
 
 
 class _MockClient(BaseRAGClient):
@@ -213,3 +216,91 @@ class TestExperimentRunner:
         assert result.db_kpi_report is not None
         assert result.db_kpi_report.results[0].name == "db_document_count"
         assert result.db_kpi_report.results[0].value == 42
+
+
+class _FakeSemanticProvider(BaseSemanticEmbeddingProvider):
+    """Deterministic provider: every text maps to the same unit vector.
+
+    With identical vectors all cosine similarities equal 1.0, which keeps the
+    expected semantic KPI values simple and stable.
+    """
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        self.call_count += 1
+        return [[1.0, 0.0] for _ in texts]
+
+
+_SEMANTIC_KPI_NAMES = {
+    str(KPIId.QUERY_CONTEXT_SIMILARITY_MEAN),
+    str(KPIId.QUERY_CONTEXT_SIMILARITY_MAX),
+    str(KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN),
+    str(KPIId.ANSWER_CONTEXT_SIMILARITY_MAX),
+    str(KPIId.ANSWER_QUERY_SIMILARITY),
+}
+
+
+class TestExperimentRunnerSemanticKPIs:
+    def test_semantic_disabled_by_default_has_no_semantic_kpis(self) -> None:
+        runner = ExperimentRunner(client=_MockClient())
+        result = runner.run(qa_examples=_make_examples(2), config=_make_config())
+
+        for ex in result.examples:
+            assert ex.kpi_report is not None
+            names = {r.name for r in ex.kpi_report.results}
+            assert names.isdisjoint(_SEMANTIC_KPI_NAMES)
+
+    def test_enabling_without_engine_raises(self) -> None:
+        runner = ExperimentRunner(client=_MockClient())
+        try:
+            runner.run(
+                qa_examples=_make_examples(1),
+                config=_make_config(),
+                compute_semantic_kpis=True,
+            )
+        except ValueError as exc:
+            assert "semantic_kpi_engine" in str(exc)
+        else:  # pragma: no cover - explicit failure if no error raised
+            raise AssertionError("Expected ValueError when no semantic engine")
+
+    def test_merges_semantic_kpis_when_enabled(self) -> None:
+        engine = SemanticKPIEngine(provider=_FakeSemanticProvider())
+        runner = ExperimentRunner(
+            client=_MockClient(), semantic_kpi_engine=engine
+        )
+        result = runner.run(
+            qa_examples=_make_examples(2),
+            config=_make_config(),
+            compute_semantic_kpis=True,
+        )
+
+        for ex in result.examples:
+            assert ex.kpi_report is not None
+            names = {r.name for r in ex.kpi_report.results}
+            # Default deterministic KPIs are still present alongside semantic.
+            assert str(KPIId.TOTAL_LATENCY_MS) in names
+            assert _SEMANTIC_KPI_NAMES.issubset(names)
+            values = {
+                r.name: r.value for r in ex.kpi_report.results
+            }
+            assert values[str(KPIId.QUERY_CONTEXT_SIMILARITY_MEAN)] == 1.0
+            assert values[str(KPIId.ANSWER_QUERY_SIMILARITY)] == 1.0
+
+    def test_semantic_not_computed_for_failed_runs(self) -> None:
+        provider = _FakeSemanticProvider()
+        engine = SemanticKPIEngine(provider=provider)
+        runner = ExperimentRunner(
+            client=_FailingClient(), semantic_kpi_engine=engine
+        )
+        result = runner.run(
+            qa_examples=_make_examples(3),
+            config=_make_config(),
+            compute_semantic_kpis=True,
+        )
+
+        assert result.num_successful == 0
+        assert result.num_failed == 3
+        # The semantic provider is never called for failed RAG runs.
+        assert provider.call_count == 0

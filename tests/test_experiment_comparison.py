@@ -21,6 +21,10 @@ from ragwatch.experiments.comparison import (
     export_comparison_summary_csv,
     export_comparison_summary_json,
 )
+from ragwatch.metrics.catalog import KPIId
+from ragwatch.metrics.schema import KPIReport, KPIResult
+from ragwatch.metrics.semantic import SemanticKPIEngine
+from ragwatch.semantic.providers import BaseSemanticEmbeddingProvider
 
 
 class _MockClient(BaseRAGClient):
@@ -234,3 +238,233 @@ class TestComparisonExporters:
                 "summary.json",
             ):
                 assert (exp_dir / name).exists()
+
+
+class _StubDBEngine:
+    """Stand-in DB KPI engine that returns a fixed report without Postgres."""
+
+    def __init__(self) -> None:
+        self.compute_calls = 0
+
+    def compute(self, connection_string: str | None = None) -> KPIReport:
+        self.compute_calls += 1
+        return KPIReport(
+            run_id=None,
+            query=None,
+            results=[
+                KPIResult(
+                    name="db_document_count",
+                    value=7,
+                    category="db_health",
+                    stage="database",
+                    source="postgres",
+                    description="stub",
+                )
+            ],
+            metadata={"source": "database"},
+        )
+
+
+class TestComparisonDBKPIs:
+    def test_spec_is_backward_compatible_without_db_fields(self) -> None:
+        spec = RetrieverExperimentSpec(
+            name="mock",
+            client=_MockClient("mock"),
+            retriever_name="mock",
+            generator_name="heuristic",
+        )
+        assert spec.db_kpi_engine is None
+        assert spec.compute_db_kpis is False
+
+    def test_default_specs_produce_no_db_kpi_report(self) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3]))
+        for exp in result.experiment_results.values():
+            assert exp.db_kpi_report is None
+
+    def test_compute_db_kpis_passes_engine_and_populates_report(self) -> None:
+        stub = _StubDBEngine()
+        specs = [
+            RetrieverExperimentSpec(
+                name="pg",
+                client=_MockClient("pg"),
+                retriever_name="pgvector",
+                generator_name="heuristic",
+                db_kpi_engine=stub,  # type: ignore[arg-type]
+                compute_db_kpis=True,
+            )
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), specs, _make_config([3, 5]))
+
+        # One DB snapshot per setting (2 top_k values).
+        assert stub.compute_calls == 2
+        for exp in result.experiment_results.values():
+            assert exp.db_kpi_report is not None
+            assert exp.db_kpi_report.results[0].name == "db_document_count"
+
+
+class _FakeSemanticProvider(BaseSemanticEmbeddingProvider):
+    """Deterministic provider mapping every text to the same unit vector."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        self.call_count += 1
+        return [[1.0, 0.0] for _ in texts]
+
+
+_SEMANTIC_KPI_NAMES = {
+    str(KPIId.QUERY_CONTEXT_SIMILARITY_MEAN),
+    str(KPIId.ANSWER_CONTEXT_SIMILARITY_MEAN),
+    str(KPIId.ANSWER_QUERY_SIMILARITY),
+}
+
+
+class TestComparisonSemanticKPIs:
+    def test_spec_is_backward_compatible_without_semantic_fields(self) -> None:
+        spec = RetrieverExperimentSpec(
+            name="mock",
+            client=_MockClient("mock"),
+            retriever_name="mock",
+            generator_name="heuristic",
+        )
+        assert spec.semantic_kpi_engine is None
+        assert spec.compute_semantic_kpis is False
+
+    def test_semantic_disabled_by_default_in_combined_csv(
+        self, tmp_path: Path
+    ) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3]))
+        out = tmp_path / "combined_kpis.csv"
+        export_combined_kpis_csv(result, out)
+
+        with out.open() as f:
+            rows = list(csv.DictReader(f))
+        assert rows
+        for name in _SEMANTIC_KPI_NAMES:
+            assert name not in rows[0]
+
+    def test_semantic_passed_through_per_spec(self, tmp_path: Path) -> None:
+        provider = _FakeSemanticProvider()
+        engine = SemanticKPIEngine(provider=provider)
+        specs = [
+            RetrieverExperimentSpec(
+                name="sem",
+                client=_MockClient("sem"),
+                retriever_name="sem",
+                generator_name="heuristic",
+                semantic_kpi_engine=engine,
+                compute_semantic_kpis=True,
+            ),
+            RetrieverExperimentSpec(
+                name="plain",
+                client=_MockClient("plain"),
+                retriever_name="plain",
+                generator_name="heuristic",
+            ),
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), specs, _make_config([3]))
+
+        sem_exp = result.experiment_results["sem_top3"]
+        for ex in sem_exp.examples:
+            assert ex.kpi_report is not None
+            names = {r.name for r in ex.kpi_report.results}
+            assert _SEMANTIC_KPI_NAMES.issubset(names)
+
+        plain_exp = result.experiment_results["plain_top3"]
+        for ex in plain_exp.examples:
+            assert ex.kpi_report is not None
+            names = {r.name for r in ex.kpi_report.results}
+            assert names.isdisjoint(_SEMANTIC_KPI_NAMES)
+
+    def test_semantic_kpis_appear_in_combined_csv_when_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        engine = SemanticKPIEngine(provider=_FakeSemanticProvider())
+        specs = [
+            RetrieverExperimentSpec(
+                name="sem",
+                client=_MockClient("sem"),
+                retriever_name="sem",
+                generator_name="heuristic",
+                semantic_kpi_engine=engine,
+                compute_semantic_kpis=True,
+            )
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), specs, _make_config([3]))
+        out = tmp_path / "combined_kpis.csv"
+        export_combined_kpis_csv(result, out)
+
+        with out.open() as f:
+            rows = list(csv.DictReader(f))
+        assert rows
+        for name in _SEMANTIC_KPI_NAMES:
+            assert name in rows[0]
+        assert rows[0][str(KPIId.ANSWER_QUERY_SIMILARITY)] == "1.0"
+
+    def test_semantic_averages_in_summary_when_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        engine = SemanticKPIEngine(provider=_FakeSemanticProvider())
+        specs = [
+            RetrieverExperimentSpec(
+                name="sem",
+                client=_MockClient("sem"),
+                retriever_name="sem",
+                generator_name="heuristic",
+                semantic_kpi_engine=engine,
+                compute_semantic_kpis=True,
+            )
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(3), specs, _make_config([3]))
+        out = tmp_path / "comparison_summary.csv"
+        export_comparison_summary_csv(result, out)
+
+        with out.open() as f:
+            rows = list(csv.DictReader(f))
+        row = rows[0]
+        assert row[f"avg_{KPIId.QUERY_CONTEXT_SIMILARITY_MEAN}"] == "1.0"
+        assert row[f"avg_{KPIId.ANSWER_QUERY_SIMILARITY}"] == "1.0"
+
+
+class TestComparisonDBKPIsExport:
+    def test_pgvector_like_spec_writes_non_null_db_kpis_json(
+        self, tmp_path: Path
+    ) -> None:
+        specs = [
+            RetrieverExperimentSpec(
+                name="pg",
+                client=_MockClient("pg"),
+                retriever_name="pgvector",
+                generator_name="heuristic",
+                db_kpi_engine=_StubDBEngine(),  # type: ignore[arg-type]
+                compute_db_kpis=True,
+            ),
+            RetrieverExperimentSpec(
+                name="tfidf",
+                client=_MockClient("tfidf"),
+                retriever_name="tfidf",
+                generator_name="heuristic",
+            ),
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), specs, _make_config([3]))
+        export_comparison(result, tmp_path)
+
+        # pgvector report is non-null: serialized report has a results list.
+        pg_payload = json.loads(
+            (tmp_path / "experiments" / "pg_top3" / "db_kpis.json").read_text()
+        )
+        assert "results" in pg_payload
+
+        # Non-pgvector retrievers keep a null db_kpis.json.
+        tfidf_payload = json.loads(
+            (tmp_path / "experiments" / "tfidf_top3" / "db_kpis.json").read_text()
+        )
+        assert tfidf_payload == {"db_kpi_report": None}
