@@ -1,0 +1,236 @@
+"""Tests for the retriever comparison runner and exporters."""
+
+import csv
+import json
+from pathlib import Path
+
+from ragwatch.core.interfaces import BaseRAGClient
+from ragwatch.core.schema import (
+    Document,
+    GenerationResult,
+    QAExample,
+    RAGRun,
+    RetrievedDocument,
+)
+from ragwatch.experiments.comparison import (
+    ComparisonConfig,
+    ComparisonRunner,
+    RetrieverExperimentSpec,
+    export_combined_kpis_csv,
+    export_comparison,
+    export_comparison_summary_csv,
+    export_comparison_summary_json,
+)
+
+
+class _MockClient(BaseRAGClient):
+    """Returns a fixed RAGRun, tagged with a retriever name."""
+
+    def __init__(self, retriever_name: str = "mock") -> None:
+        self._retriever_name = retriever_name
+
+    def run(self, query: str, top_k: int = 5) -> RAGRun:
+        docs = [
+            RetrievedDocument(
+                document=Document(
+                    doc_id="d1", text="doc text", metadata={"source": "src"}
+                ),
+                score=0.8,
+                rank=1,
+                retriever_name=self._retriever_name,
+            )
+        ]
+        return RAGRun(
+            run_id=f"{self._retriever_name}-run",
+            query=query,
+            retrieved_documents=docs,
+            generation=GenerationResult(answer="mock answer", generator_name="mock"),
+            latency_ms=2.0,
+            metadata={
+                "retrieval_latency_ms": 1.5,
+                "generation_latency_ms": 0.5,
+                "total_latency_ms": 2.0,
+            },
+        )
+
+
+class _FailingClient(BaseRAGClient):
+    """Raises on every run (per-example failures)."""
+
+    def run(self, query: str, top_k: int = 5) -> RAGRun:
+        raise RuntimeError("boom")
+
+
+def _make_examples(n: int = 3) -> list[QAExample]:
+    return [
+        QAExample(example_id=f"ex{i}", question=f"Q{i}?", answers=[f"a{i}"])
+        for i in range(n)
+    ]
+
+
+def _make_config(top_k_values: list[int] | None = None) -> ComparisonConfig:
+    return ComparisonConfig(
+        comparison_name="test_comparison",
+        dataset_name="test_ds",
+        top_k_values=top_k_values if top_k_values is not None else [3, 5],
+        max_examples=10,
+    )
+
+
+def _make_specs() -> list[RetrieverExperimentSpec]:
+    return [
+        RetrieverExperimentSpec(
+            name="mock_a",
+            client=_MockClient("mock_a"),
+            retriever_name="mock_a",
+            generator_name="heuristic",
+        ),
+        RetrieverExperimentSpec(
+            name="mock_b",
+            client=_MockClient("mock_b"),
+            retriever_name="mock_b",
+            generator_name="heuristic",
+        ),
+    ]
+
+
+class TestComparisonRunner:
+    def test_runs_multiple_specs_and_top_k(self) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(3), _make_specs(), _make_config([3, 5]))
+
+        # 2 specs x 2 top_k = 4 experiment settings
+        assert result.num_experiments == 4
+
+    def test_experiment_keys_are_stable_and_readable(self) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3, 5]))
+
+        assert set(result.experiment_keys) == {
+            "mock_a_top3",
+            "mock_a_top5",
+            "mock_b_top3",
+            "mock_b_top5",
+        }
+
+    def test_one_experiment_result_per_setting(self) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(3), _make_specs(), _make_config([3]))
+
+        assert len(result.experiment_results) == 2
+        for exp in result.experiment_results.values():
+            assert exp.num_examples == 3
+            assert exp.num_successful == 3
+
+    def test_top_k_propagates_to_experiment_config(self) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(1), _make_specs(), _make_config([3, 5]))
+
+        assert result.experiment_results["mock_a_top3"].config.top_k == 3
+        assert result.experiment_results["mock_a_top5"].config.top_k == 5
+
+    def test_per_example_failure_does_not_crash_comparison(self) -> None:
+        specs = [
+            RetrieverExperimentSpec(
+                name="good",
+                client=_MockClient("good"),
+                retriever_name="good",
+                generator_name="heuristic",
+            ),
+            RetrieverExperimentSpec(
+                name="bad",
+                client=_FailingClient(),
+                retriever_name="bad",
+                generator_name="heuristic",
+            ),
+        ]
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(3), specs, _make_config([3]))
+
+        assert result.num_experiments == 2
+        assert result.experiment_results["good_top3"].num_successful == 3
+        bad = result.experiment_results["bad_top3"]
+        assert bad.num_successful == 0
+        assert bad.num_failed == 3
+
+
+class TestComparisonExporters:
+    def test_export_combined_kpis_csv(self, tmp_path: Path) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3, 5]))
+        out = tmp_path / "combined_kpis.csv"
+        export_combined_kpis_csv(result, out)
+
+        assert out.exists()
+        with out.open() as f:
+            rows = list(csv.DictReader(f))
+        # 4 settings x 2 examples = 8 rows
+        assert len(rows) == 8
+        first = rows[0]
+        for col in (
+            "comparison_name",
+            "experiment_key",
+            "dataset_name",
+            "retriever_name",
+            "generator_name",
+            "top_k",
+            "example_id",
+            "query",
+            "run_id",
+            "num_retrieved_documents",
+            "total_latency_ms",
+        ):
+            assert col in first
+
+    def test_export_comparison_summary_csv(self, tmp_path: Path) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(3), _make_specs(), _make_config([3, 5]))
+        out = tmp_path / "comparison_summary.csv"
+        export_comparison_summary_csv(result, out)
+
+        assert out.exists()
+        with out.open() as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 4  # one row per setting
+        row = rows[0]
+        assert row["num_examples"] == "3"
+        assert row["num_successful"] == "3"
+        assert "avg_total_latency_ms" in row
+        assert "avg_retrieval_score_mean" in row
+
+    def test_export_comparison_summary_json(self, tmp_path: Path) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3]))
+        out = tmp_path / "comparison_summary.json"
+        export_comparison_summary_json(result, out)
+
+        payload = json.loads(out.read_text())
+        assert payload["comparison_name"] == "test_comparison"
+        assert payload["top_k_values"] == [3]
+        assert payload["num_experiments"] == 2
+        assert "created_at" in payload
+        assert len(payload["experiments"]) == 2
+        exp = payload["experiments"][0]
+        assert "experiment_key" in exp
+        assert "aggregates" in exp
+
+    def test_export_comparison_creates_full_tree(self, tmp_path: Path) -> None:
+        runner = ComparisonRunner()
+        result = runner.run(_make_examples(2), _make_specs(), _make_config([3, 5]))
+        export_comparison(result, tmp_path)
+
+        assert (tmp_path / "combined_kpis.csv").exists()
+        assert (tmp_path / "comparison_summary.csv").exists()
+        assert (tmp_path / "comparison_summary.json").exists()
+
+        experiments_dir = tmp_path / "experiments"
+        for key in result.experiment_keys:
+            exp_dir = experiments_dir / key
+            for name in (
+                "runs.jsonl",
+                "kpis.jsonl",
+                "kpis.csv",
+                "db_kpis.json",
+                "summary.json",
+            ):
+                assert (exp_dir / name).exists()

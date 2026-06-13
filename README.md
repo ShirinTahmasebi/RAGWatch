@@ -472,12 +472,59 @@ Full retrieved document text is intentionally excluded from `runs.jsonl` to keep
 
 > **Note:** Postgres-backed experiment storage is not implemented yet — results are exported to files only.
 
+## Retriever comparison experiments
+
+RAGWatch can run the same QA dataset across multiple retriever backends and top-k settings, then export combined comparison files for paper-style analysis.
+
+### Why comparison experiments?
+
+Comparing retrievers (TF-IDF vs Chroma vs Qdrant vs pgvector) and top-k settings side by side is a core research task. The comparison runner reuses the existing `ExperimentRunner` for each setting and aggregates the results into shared tables, so you don't have to stitch experiments together by hand.
+
+### How it works
+
+`ComparisonRunner` takes a list of `RetrieverExperimentSpec`s (each wrapping a `BaseRAGClient`) and a `ComparisonConfig` with `top_k_values`. For each retriever × top-k it runs one experiment and stores the `ExperimentResult` under a readable key like `tfidf_top3`, `chroma_top5`. A failure in one setting does not abort the whole comparison.
+
+### Run the example
+
+```bash
+pip install -e ".[datasets]"            # TF-IDF only
+pip install -e ".[datasets,vectordb]"   # also include Chroma + Qdrant
+python examples/run_squad_retriever_comparison.py
+```
+
+TF-IDF always runs; Chroma and Qdrant are included automatically when their optional dependencies are installed.
+
+### Output files
+
+```
+outputs/comparisons/squad_retrievers/
+  combined_kpis.csv          # one row per successful run across all experiments
+  comparison_summary.csv     # one row per retriever/top-k setting with averaged KPIs
+  comparison_summary.json    # comparison metadata + per-experiment aggregates
+  experiments/
+    tfidf_top3/              # full per-experiment export (runs.jsonl, kpis.jsonl, ...)
+    tfidf_top5/
+    chroma_top3/
+    ...
+```
+
+Each per-experiment folder is written with the standard experiment exporters (`runs.jsonl`, `kpis.jsonl`, `kpis.csv`, `db_kpis.json`, `summary.json`).
+
+### What these files are useful for
+
+- Paper comparison tables
+- Paper plots
+- A later Streamlit dashboard
+- Later Postgres experiment storage
+
+> **Note:** Streamlit/Grafana dashboards are not implemented yet, and pgvector is not part of the default comparison example yet (TODO: add it gracefully when `RAGWATCH_PGVECTOR_URL` is available).
+
 ## What's NOT included yet (intentionally)
 
 - LLM-based generators or evaluators
 - Semantic faithfulness/relevance judges
 - Drift detection
-- Grafana dashboards
+- Streamlit / Grafana dashboards
 - MCP (Model Context Protocol) integration
 - Reading KPIs from OpenTelemetry trace storage
 

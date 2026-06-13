@@ -19,7 +19,17 @@ This is a research-oriented codebase, so clean architecture, reproducibility, an
 
 ---
 
-## Current completed components
+## Current RAGWatch project state
+
+RAGWatch is an installable Python package (`src/ragwatch`) with a working RAG pipeline, multiple retriever backends, deterministic KPIs, OpenTelemetry tracing, and a batch experiment runner with file-based result export.
+
+The most recently completed milestone is the **batch experiment runner + result export**. Experiments can run a RAG client over many QA examples, compute KPIs per run, optionally capture one DB KPI snapshot, and export results to JSONL/CSV/JSON.
+
+Current test status: the full suite passes (most recently 242 passed, 18 skipped). DB and vector-backend tests are skipped unless their infrastructure is available. Exact counts may shift because some tests are parametrized over the KPI catalog.
+
+---
+
+## Completed components
 
 The project already includes the following completed pieces.
 
@@ -153,6 +163,20 @@ Metric classes should not hardcode KPI metadata. They should reference the centr
 
 ---
 
+### 7. Batch experiment runner and result export
+
+The project has a batch experiment module in `src/ragwatch/experiments/`:
+
+* `schema.py` — `ExperimentConfig`, `ExperimentExampleResult`, `ExperimentResult`
+* `runner.py` — `ExperimentRunner`
+* `exporters.py` — JSONL/CSV/JSON exporters
+
+`ExperimentRunner` runs a `BaseRAGClient` over many `QAExample`s, computes a `KPIReport` per run, records per-example errors without aborting, and can optionally compute one DB KPI snapshot (`compute_db_kpis=True`).
+
+Exporters produce: `runs.jsonl`, `kpis.jsonl`, `kpis.csv`, `db_kpis.json`, `summary.json`. Generated outputs are written under `outputs/` and must not be committed.
+
+---
+
 ## Current KPI types
 
 ### RAGRun-based KPIs
@@ -217,6 +241,10 @@ python examples/run_squad_pgvector.py
 python examples/query_pgvector_stats.py
 python examples/query_pgvector_kpis.py
 docker compose down
+
+# Batch experiments
+python examples/run_squad_tfidf_experiment.py
+python examples/run_squad_pgvector_experiment.py
 ```
 
 ---
@@ -225,8 +253,9 @@ docker compose down
 
 Recent validation showed:
 
-* without Postgres: many tests pass, DB tests skipped
-* with Postgres: all tests pass
+* full suite passes (most recently 242 passed, 18 skipped)
+* without Postgres / vector backends: those tests are skipped, the rest pass
+* with Postgres available: DB tests also run and pass
 
 Exact test counts may change because KPI catalog tests are parametrized over KPI IDs.
 
@@ -242,7 +271,8 @@ Follow these principles:
 4. Use the KPI catalog for KPI names, categories, stages, sources, and descriptions.
 5. Do not commit `.env`.
 6. Keep `.env.template` safe to commit.
-7. Do not require API keys for the current local research prototype.
+7. Do not commit generated outputs under `outputs/`.
+8. Do not require API keys for the current local research prototype.
 8. Do not add Grafana yet.
 9. Do not add MCP.
 10. Do not add LLM-based judges yet.
@@ -253,44 +283,34 @@ Follow these principles:
 
 ---
 
-## Current development stage
+## Current milestone
 
-The next step is:
+The batch experiment runner + result export milestone is **complete**.
 
-# Batch experiment runner + result export
+`src/ragwatch/experiments/` can:
 
-The goal is to run a RAG client over many QA examples, compute KPIs for each run, and save results to files.
+* run a RAG client over many QA examples
+* compute RAGRun-based KPIs for each run
+* optionally compute one DB KPI snapshot
+* export RAG runs and KPI reports to JSONL, CSV, and JSON
 
-The next step should save:
-
-* RAG runs
-* retrieved document summaries
-* KPI reports
-* optional DB KPI snapshot
-
-The first version should export to:
-
-* JSONL
-* CSV
-
-Do not add Grafana yet.
-Do not add semantic LLM judges yet.
-Do not add drift detection yet.
-Do not add Postgres experiment storage yet unless explicitly requested later.
+There is no active in-progress milestone right now. The next milestone (below) should only be started when explicitly requested.
 
 ---
 
-## Planned next steps after batch runner
+## Next planned steps
 
-After the batch experiment runner, planned future steps are:
+Planned future steps, in rough priority order:
 
-1. Postgres storage for experiment runs and KPI values
+1. Postgres storage for experiment runs and KPI values (next milestone)
 2. comparison scripts for TF-IDF vs Chroma vs Qdrant vs pgvector
 3. paper-quality plots
-4. semantic/open-source model-based KPIs
+4. semantic / open-source model-based KPIs
 5. drift simulation and drift metrics
 6. dashboard or Grafana integration
 7. optional OpenTelemetry backend integration
+
+Do not start any of these unless explicitly requested.
 
 
 
@@ -463,6 +483,7 @@ Integration tests that require Postgres should be skipped unless `RAGWATCH_PGVEC
 
 * `.env` must remain gitignored.
 * `.env.template` should be committed.
+* Do not commit generated outputs under `outputs/` (experiment results, exports).
 * Do not print secrets in logs.
 * Do not hardcode real credentials in Python files.
 
@@ -517,3 +538,27 @@ Before adding or modifying code:
 4. Avoid duplicating functionality that already exists.
 
 If something already exists, extend it instead of recreating it.
+
+---
+
+## What not to implement unless explicitly requested
+
+Do not add any of the following unless the user explicitly asks for it:
+
+* Grafana or any dashboard infrastructure
+* MCP (Model Context Protocol) integration
+* LLM-as-judge or semantic/open-source evaluation metrics
+* drift detection or drift simulation
+* reading KPIs from an OpenTelemetry backend / trace storage
+* Postgres experiment storage (results are file-based exports only for now)
+* async/multiprocessing, plugin systems, or Alembic migrations
+
+Also avoid these recurring mistakes:
+
+* do not add `__all__` to `__init__.py` files, and keep them minimal
+* do not hardcode KPI metadata outside `src/ragwatch/metrics/catalog.py`
+* do not mix module responsibilities (keep modules decoupled)
+* do not overengineer with unnecessary abstractions
+* do not commit `.env` or generated outputs under `outputs/`
+
+These are planned future steps or known anti-patterns; do not implement or introduce them prematurely.
