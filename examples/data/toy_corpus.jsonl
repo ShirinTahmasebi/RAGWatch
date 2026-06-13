@@ -1,0 +1,8 @@
+{"doc_id": "d1", "text": "Paris is the capital of France.", "metadata": {"source": "toy"}}
+{"doc_id": "d2", "text": "Berlin is the capital of Germany.", "metadata": {"source": "toy"}}
+{"doc_id": "d3", "text": "Tokyo is the capital of Japan.", "metadata": {"source": "toy"}}
+{"doc_id": "d4", "text": "The Eiffel Tower is located in Paris, France.", "metadata": {"source": "toy"}}
+{"doc_id": "d5", "text": "The Great Wall of China is one of the largest structures ever built.", "metadata": {"source": "toy"}}
+{"doc_id": "d6", "text": "Python is a popular programming language for data science.", "metadata": {"source": "toy"}}
+{"doc_id": "d7", "text": "Machine learning models require training data to learn patterns.", "metadata": {"source": "toy"}}
+{"doc_id": "d8", "text": "Retrieval-augmented generation combines search with language models.", "metadata": {"source": "toy"}}

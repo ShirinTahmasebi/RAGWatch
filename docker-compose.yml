@@ -1,0 +1,23 @@
+# RAGWatch Docker Compose
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ragwatch-postgres
+    environment:
+      POSTGRES_USER: ragwatch
+      POSTGRES_PASSWORD: ragwatch
+      POSTGRES_DB: ragwatch
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ragwatch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragwatch"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  ragwatch_pgdata:

@@ -1,0 +1,4 @@
+{"example_id": "q1", "question": "What is the capital of France?", "answers": ["Paris"], "metadata": {"dataset": "toy"}}
+{"example_id": "q2", "question": "What is the capital of Germany?", "answers": ["Berlin"], "metadata": {"dataset": "toy"}}
+{"example_id": "q3", "question": "Where is the Eiffel Tower?", "answers": ["Paris", "Paris, France"], "metadata": {"dataset": "toy"}}
+{"example_id": "q4", "question": "What is retrieval-augmented generation?", "answers": ["combines search with language models"], "metadata": {"dataset": "toy"}}
