@@ -517,14 +517,95 @@ Each per-experiment folder is written with the standard experiment exporters (`r
 - A later Streamlit dashboard
 - Later Postgres experiment storage
 
-> **Note:** Streamlit/Grafana dashboards are not implemented yet, and pgvector is not part of the default comparison example yet (TODO: add it gracefully when `RAGWATCH_PGVECTOR_URL` is available).
+> **Note:** pgvector is not part of the default comparison example yet (TODO: add it gracefully when `RAGWATCH_PGVECTOR_URL` is available).
+
+## Research dashboard
+
+RAGWatch includes a simple, local Streamlit dashboard that reads exported comparison files and visualizes the results. It is a research tool for exploring KPIs interactively — **not** Grafana, and it requires no database, OpenTelemetry backend, or API keys.
+
+### What it does
+
+- **Overview** — comparison/dataset name, number of settings, successful/failed run counts, available retrievers and top-k values
+- **Retriever comparison** — the `comparison_summary.csv` table plus bar charts of average latency, retrieval score, redundancy, and answer length by retriever/top-k
+- **KPI explorer** — pick any numeric KPI from `combined_kpis.csv` and view its distribution and per-retriever breakdown
+- **Query / run inspector** — drill into a single experiment + example to see the query, answer, retrieved doc IDs/scores/ranks, and KPI values
+- **Failure inspection** — a table of failed examples (experiment, example_id, question, error), or a confirmation that none failed
+
+### Setup
+
+```bash
+pip install -e ".[dashboard]"
+```
+
+### First generate comparison outputs
+
+```bash
+python examples/run_squad_retriever_comparison.py
+```
+
+### Run the dashboard
+
+```bash
+streamlit run src/ragwatch/dashboard/app.py
+# or
+python examples/run_dashboard.py
+```
+
+By default it reads `outputs/comparisons/squad_retrievers`; you can point it at any comparison output directory from the sidebar.
+
+### Files it reads
+
+| File | Used for |
+|------|----------|
+| `combined_kpis.csv` | KPI explorer, run inspector |
+| `comparison_summary.csv` | Retriever comparison table and charts |
+| `comparison_summary.json` | Overview metadata |
+| `experiments/*/runs.jsonl` | Answers, retrieved docs, and failure inspection |
+
+This is a local research dashboard, not Grafana.
+
+## Paper-quality plots
+
+Separate from the interactive dashboard, RAGWatch can generate **static, paper-ready figures** from the same comparison outputs using matplotlib. These are reproducible PNGs suitable for papers, reports, slides, and debugging retriever behavior.
+
+### Setup
+
+```bash
+pip install -e ".[plots]"
+```
+
+### First generate comparison outputs
+
+```bash
+python examples/run_squad_retriever_comparison.py
+```
+
+### Then generate plots
+
+```bash
+python examples/generate_squad_comparison_plots.py
+```
+
+Figures are saved to `outputs/figures/squad_retrievers/`:
+
+| Figure | Shows |
+|--------|-------|
+| `latency_by_retriever.png` | Avg total latency per retriever/top-k |
+| `retrieval_score_by_retriever.png` | Avg mean retrieval score |
+| `retrieval_redundancy_by_retriever.png` | Avg retrieval redundancy |
+| `answer_length_by_retriever.png` | Avg answer length (words) |
+| `top_k_latency_sensitivity.png` | Latency across top-k, by retriever |
+| `top_k_retrieval_score_sensitivity.png` | Retrieval score across top-k, by retriever |
+
+These figures are useful for papers, reports, slides, and debugging retriever behavior. If the comparison outputs are missing, the script tells you to run `python examples/run_squad_retriever_comparison.py` first.
 
 ## What's NOT included yet (intentionally)
+
 
 - LLM-based generators or evaluators
 - Semantic faithfulness/relevance judges
 - Drift detection
-- Streamlit / Grafana dashboards
+- Grafana dashboards
 - MCP (Model Context Protocol) integration
 - Reading KPIs from OpenTelemetry trace storage
 
