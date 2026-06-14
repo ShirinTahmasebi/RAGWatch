@@ -19,5 +19,70 @@ services:
       timeout: 3s
       retries: 5
 
+  # ---------------------------------------------------------------------------
+  # Optional observability stack (OpenTelemetry + Prometheus + Tempo + Grafana)
+  #
+  # Started only with the "observability" profile:
+  #   docker compose --profile observability up -d
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.1
+    container_name: ragwatch-otel-collector
+    profiles:
+      - observability
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus metrics exporter
+    depends_on:
+      - tempo
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: ragwatch-prometheus
+    profiles:
+      - observability
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: ragwatch-tempo
+    profiles:
+      - observability
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./infra/observability/tempo.yaml:/etc/tempo.yaml
+      - ragwatch_tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP API
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: ragwatch-grafana
+    profiles:
+      - observability
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning
+      - ragwatch_grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+
 volumes:
   ragwatch_pgdata:
+  ragwatch_tempo_data:
+  ragwatch_grafana_data:

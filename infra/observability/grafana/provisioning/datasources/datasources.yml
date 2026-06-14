@@ -1,0 +1,18 @@
+# RAGWatch Grafana datasource provisioning
+#
+# Auto-provisions Prometheus (metrics) and Tempo (traces) using their
+# Docker Compose service URLs.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
