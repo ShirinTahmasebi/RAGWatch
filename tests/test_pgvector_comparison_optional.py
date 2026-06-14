@@ -15,14 +15,14 @@ from ragwatch.core.schema import Document
 EXAMPLE_PATH = (
     Path(__file__).resolve().parent.parent
     / "examples"
-    / "run_squad_retriever_comparison.py"
+    / "run_retriever_comparison.py"
 )
 
 
 def _load_example_module():
     """Import the example script as a module by file path."""
     spec = importlib.util.spec_from_file_location(
-        "_squad_retriever_comparison_example", EXAMPLE_PATH
+        "_retriever_comparison_example", EXAMPLE_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -44,7 +44,7 @@ class TestTryCreatePgvectorSpec:
         monkeypatch.setattr(example_module, "load_env", lambda: None)
 
         spec = example_module.try_create_pgvector_spec(
-            corpus=[], embedding_model=object(), generator=None
+            "squad", corpus=[], embedding_model=object(), generator=None
         )
         assert spec is None
         out = capsys.readouterr().out
@@ -57,7 +57,7 @@ class TestTryCreatePgvectorSpec:
         monkeypatch.setenv("RAGWATCH_PGVECTOR_URL", "postgresql://x/y")
 
         spec = example_module.try_create_pgvector_spec(
-            corpus=[], embedding_model=None, generator=None
+            "squad", corpus=[], embedding_model=None, generator=None
         )
         assert spec is None
         assert "Skipping pgvector" in capsys.readouterr().out
@@ -71,7 +71,7 @@ class TestTryCreatePgvectorSpec:
 
         corpus = [Document(doc_id="d1", text="some text", metadata={})]
         spec = example_module.try_create_pgvector_spec(
-            corpus=corpus, embedding_model=object(), generator=None
+            "squad", corpus=corpus, embedding_model=object(), generator=None
         )
         assert spec is None
         assert "Skipping pgvector" in capsys.readouterr().out

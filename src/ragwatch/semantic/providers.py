@@ -32,6 +32,9 @@ from ragwatch.config.env import get_env, load_env
 # Centralized environment variable names (avoid scattering raw strings).
 ENV_SEMANTIC_PROVIDER = "RAGWATCH_SEMANTIC_PROVIDER"
 
+# Opt-out flag for the research scripts that compute semantic KPIs by default.
+ENV_DISABLE_SEMANTIC_KPIS = "RAGWATCH_DISABLE_SEMANTIC_KPIS"
+
 ENV_LOCAL_EMBEDDING_MODEL = "RAGWATCH_LOCAL_EMBEDDING_MODEL"
 
 ENV_OPENAI_API_KEY = "RAGWATCH_OPENAI_API_KEY"
@@ -210,3 +213,25 @@ def create_semantic_embedding_provider_from_env() -> BaseSemanticEmbeddingProvid
         f"Unknown {ENV_SEMANTIC_PROVIDER}={provider!r}. "
         f"Expected one of: {PROVIDER_LOCAL}, {PROVIDER_OPENAI}, {PROVIDER_AZURE_OPENAI}."
     )
+
+
+def semantic_kpis_disabled() -> bool:
+    """Return True when the user explicitly opted out of semantic KPIs.
+
+    Reads ``RAGWATCH_DISABLE_SEMANTIC_KPIS``; any of ``1/true/yes/on`` (case
+    insensitive) disables semantic KPIs in the research scripts.
+    """
+    value = (get_env(ENV_DISABLE_SEMANTIC_KPIS, default="false") or "").strip().lower()
+    return value in ("1", "true", "yes", "on")
+
+
+def semantic_kpis_enabled() -> bool:
+    """Return True when semantic KPIs should be computed (the default)."""
+    return not semantic_kpis_disabled()
+
+
+def resolve_semantic_provider_name() -> str:
+    """Return the configured semantic provider name (defaults to ``local``)."""
+    return (
+        get_env(ENV_SEMANTIC_PROVIDER, default=PROVIDER_LOCAL) or PROVIDER_LOCAL
+    ).strip().lower()
